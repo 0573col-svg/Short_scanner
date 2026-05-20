@@ -1,0 +1,2194 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Short Scanner — Binance</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg:#0a0a0a; --bg-1:#111111; --bg-2:#161616; --bg-3:#1c1c1c;
+    --line:#232323; --line-2:#2e2e2e;
+    --text:#d4d4d4; --text-dim:#6a6a6a; --text-mid:#909090; --text-hi:#fafafa;
+    --red:#e34c5c; --red-bg:rgba(227,76,92,0.08);
+    --green:#4ade80; --green-bg:rgba(74,222,128,0.08);
+    --amber:#fbbf24; --amber-bg:rgba(251,191,36,0.08);
+    --blue:#60a5fa; --blue-bg:rgba(96,165,250,0.08);
+    --mono:'JetBrains Mono',ui-monospace,monospace;
+    --sans:'Inter',system-ui,sans-serif;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:13px;min-height:100vh;-webkit-font-smoothing:antialiased}
+  .container{max-width:1600px;margin:0 auto;padding:0 20px 60px}
+
+  header{padding:16px 0;border-bottom:1px solid var(--line);margin-bottom:20px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:16px}
+  .brand{font-weight:700;font-size:15px;color:var(--text-hi);display:flex;align-items:center;gap:10px}
+  .brand-dot{width:6px;height:6px;border-radius:50%;background:var(--red)}
+  .brand-sub{font-size:11px;color:var(--text-dim);font-weight:400;margin-left:6px}
+  .header-right{display:flex;align-items:center;gap:14px;font-size:12px;color:var(--text-dim);font-family:var(--mono);flex-wrap:wrap}
+  .led{width:6px;height:6px;border-radius:50%;background:var(--text-dim);display:inline-block}
+  .led.on{background:var(--green);animation:ledPulse 2.5s ease-in-out infinite}
+  .led.warn{background:var(--amber);animation:ledPulse 1.2s ease-in-out infinite}
+  .led.err{background:var(--red)}
+  @keyframes ledPulse{0%,100%{opacity:1}50%{opacity:.4}}
+  .h-sep{width:1px;height:12px;background:var(--line-2)}
+  .h-item{display:flex;align-items:center;gap:6px}
+
+  .tabs{display:flex;border-bottom:1px solid var(--line);margin-bottom:24px}
+  .tab{padding:10px 18px;font-size:13px;font-weight:500;color:var(--text-dim);cursor:pointer;border-bottom:2px solid transparent;transition:color .15s,border-color .15s;user-select:none}
+  .tab:hover{color:var(--text)}
+  .tab.active{color:var(--text-hi);border-bottom-color:var(--text-hi)}
+  .tab-content{display:none}
+  .tab-content.active{display:block;animation:fadeIn .2s ease}
+  @keyframes fadeIn{from{opacity:0}to{opacity:1}}
+
+  .toolbar{background:var(--bg-1);border:1px solid var(--line);border-radius:6px;padding:12px 16px;display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin-bottom:16px}
+  .ctl{display:flex;align-items:center;gap:8px}
+  .ctl-label{font-size:11px;color:var(--text-dim);font-family:var(--mono);text-transform:uppercase;letter-spacing:.5px;white-space:nowrap}
+  input[type="number"],select{background:var(--bg-2);border:1px solid var(--line-2);color:var(--text-hi);font-family:var(--mono);font-size:12px;padding:6px 10px;border-radius:4px;outline:none;width:80px;transition:border-color .15s}
+  input[type="number"]:focus,select:focus{border-color:var(--blue)}
+  select{width:auto}
+  .toggle{display:inline-flex;background:var(--bg-2);border:1px solid var(--line-2);border-radius:4px;padding:2px}
+  .toggle button{background:transparent;border:none;color:var(--text-dim);font-family:var(--sans);font-size:11px;font-weight:500;padding:5px 12px;cursor:pointer;border-radius:3px;transition:all .15s}
+  .toggle button.active{background:var(--text-hi);color:var(--bg);font-weight:600;box-shadow:0 1px 3px rgba(0,0,0,.4)}
+  .btn{background:transparent;border:1px solid var(--line-2);color:var(--text);font-family:var(--sans);font-size:12px;font-weight:500;padding:7px 14px;cursor:pointer;border-radius:4px;transition:all .15s;display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+  .btn:hover{border-color:var(--text-mid);color:var(--text-hi)}
+  .btn-primary{background:var(--text-hi);color:var(--bg);border-color:var(--text-hi)}
+  .btn-primary:hover{background:var(--text)}
+  .btn-danger{color:var(--red);border-color:rgba(227,76,92,.3)}
+  .btn-danger:hover{background:var(--red-bg);border-color:var(--red)}
+  .btn-green{color:var(--green);border-color:rgba(74,222,128,.3)}
+  .btn-green:hover{background:var(--green-bg)}
+  .btn-sm{font-size:11px;padding:4px 9px}
+
+  .stats{display:grid;grid-template-columns:repeat(6,1fr);gap:1px;background:var(--line);border:1px solid var(--line);border-radius:6px;overflow:hidden;margin-bottom:16px}
+  .stat{background:var(--bg-1);padding:14px 16px}
+  .stat-label{font-size:10px;color:var(--text-dim);font-family:var(--mono);text-transform:uppercase;letter-spacing:.8px;margin-bottom:6px}
+  .stat-val{font-size:20px;font-weight:600;color:var(--text-hi);font-family:var(--mono);letter-spacing:-.5px}
+  .stat-val.red{color:var(--red)}
+  .stat-val.green{color:var(--green)}
+  .stat-val.amber{color:var(--amber)}
+  .stat-val.blue{color:var(--blue)}
+  .stat-val.sm{font-size:14px}
+
+  .progress{height:2px;background:var(--line);margin-bottom:20px;overflow:hidden;border-radius:1px}
+  .progress-fill{height:100%;background:var(--text-hi);transition:width 1s linear;width:0%}
+
+  .table-wrap{background:var(--bg-1);border:1px solid var(--line);border-radius:6px;overflow:hidden;overflow-x:auto}
+  table{width:100%;border-collapse:collapse;font-size:12px}
+  thead{background:var(--bg-2);border-bottom:1px solid var(--line)}
+  th{font-size:10px;font-weight:600;color:var(--text-dim);text-align:left;padding:11px 12px;text-transform:uppercase;letter-spacing:.6px;white-space:nowrap;font-family:var(--mono);user-select:none}
+  th.right{text-align:right}
+  tbody tr{border-bottom:1px solid var(--line);transition:background .12s;cursor:pointer}
+  tbody tr:last-child{border-bottom:none}
+  tbody tr:hover{background:var(--bg-2)}
+  tbody tr.row-go{background:var(--red-bg);border-left:2px solid var(--red)}
+  tbody tr.row-near{background:var(--amber-bg);border-left:2px solid var(--amber)}
+  tbody tr.row-watch{border-left:2px solid var(--blue)}
+  tbody tr.new-alert{animation:alertFlash 1.2s ease}
+  @keyframes alertFlash{0%{background:rgba(227,76,92,.35)}100%{}}
+  td{padding:10px 12px;white-space:nowrap;font-family:var(--mono);font-size:12px}
+  td.right{text-align:right}
+  .t-rank{color:var(--text-dim);font-size:11px}
+  .t-sym{font-family:var(--sans);font-weight:600;color:var(--text-hi);font-size:13px}
+  .t-pair{color:var(--text-dim);font-size:10px;margin-left:3px}
+  .ch-up{color:var(--green)}
+  .ch-dn{color:var(--red)}
+
+  .pill{display:inline-flex;align-items:center;padding:2px 8px;font-size:10px;font-weight:600;border-radius:3px;font-family:var(--sans);letter-spacing:.3px;white-space:nowrap}
+  .pill-go{background:var(--red);color:var(--bg)}
+  .pill-near{background:var(--amber-bg);color:var(--amber);border:1px solid rgba(251,191,36,.3)}
+  .pill-watch{background:var(--blue-bg);color:var(--blue);border:1px solid rgba(96,165,250,.3)}
+  .pill-btc{background:var(--bg-3);color:var(--text-dim);border:1px solid var(--line-2)}
+  .pill-no{color:var(--text-dim);opacity:.5}
+
+  .candles{display:inline-flex;gap:2px;align-items:center;vertical-align:middle}
+  .candle{width:5px;height:16px;border-radius:1px}
+  .candle.red{background:var(--red)}
+  .candle.green{background:var(--green)}
+  .candle.neutral{background:var(--text-dim);opacity:.4}
+
+  .conds-mini{display:inline-flex;gap:3px;align-items:center;vertical-align:middle}
+  .cond-dot{width:8px;height:8px;border-radius:50%}
+  .cond-dot.ok{background:var(--green)}
+  .cond-dot.near{background:var(--amber)}
+  .cond-dot.fail{background:var(--text-dim);opacity:.25}
+
+  .score-cell{display:flex;align-items:center;gap:8px;min-width:80px}
+  .score-bar{flex:1;height:3px;background:var(--line);border-radius:2px;overflow:hidden;min-width:40px}
+  .score-fill{height:100%;border-radius:2px;transition:width .5s ease}
+  .score-num{font-weight:600;min-width:24px;text-align:right;font-size:12px}
+
+  .detail-row{background:var(--bg-2) !important;border-left:2px solid var(--line-2) !important;cursor:default !important}
+  .detail-row:hover{background:var(--bg-2) !important}
+  .detail-row td{padding:16px 20px}
+  .detail-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:14px;margin-bottom:14px}
+  .check{display:flex;flex-direction:column;gap:4px}
+  .check-lbl{font-size:10px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.5px;font-family:var(--mono)}
+  .check-val{font-size:12px;color:var(--text);display:flex;align-items:center;gap:6px}
+  .ok{color:var(--green)}
+  .warn{color:var(--amber)}
+  .dim{color:var(--text-dim)}
+  .check-pts{font-size:10px;color:var(--text-dim);font-family:var(--mono);margin-left:auto}
+  .detail-actions{display:flex;gap:8px;padding-top:12px;border-top:1px solid var(--line)}
+
+  /* HISTORIAL Y SPARKLINE */
+  .history-panel{margin:14px 0;padding:14px;background:var(--bg-3);border-radius:6px;border:1px solid var(--line)}
+  .history-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:8px}
+  .history-title{font-size:10px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.8px;font-family:var(--mono)}
+  .history-loading{display:flex;align-items:center;gap:8px;font-size:11px;color:var(--text-dim);font-family:var(--mono)}
+  .spin{display:inline-block;width:10px;height:10px;border:1.5px solid var(--line-2);border-top-color:var(--blue);border-radius:50%;animation:spin .6s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .history-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:10px;margin-bottom:14px}
+  .hist-day{background:var(--bg-2);padding:10px 12px;border-radius:4px;border:1px solid var(--line)}
+  .hist-day-lbl{font-size:9px;color:var(--text-dim);font-family:var(--mono);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px}
+  .hist-day-val{font-size:14px;font-weight:700;font-family:var(--mono)}
+  .hist-day-val.up{color:var(--green)}
+  .hist-day-val.dn{color:var(--red)}
+  .hist-bar-wrap{height:3px;background:var(--line);border-radius:2px;margin-top:6px;overflow:hidden;position:relative}
+  .hist-bar{position:absolute;top:0;height:100%;border-radius:2px;transition:width .4s}
+  .hist-bar.up{background:var(--green);left:50%}
+  .hist-bar.dn{background:var(--red);right:50%}
+  .hist-zero{position:absolute;top:-2px;bottom:-2px;left:50%;width:1px;background:var(--text-dim);opacity:.3}
+  .hist-summary{display:flex;gap:20px;padding-top:10px;border-top:1px solid var(--line);font-size:11px;flex-wrap:wrap}
+  .hist-sum-item{display:flex;align-items:center;gap:6px}
+  .hist-sum-lbl{color:var(--text-dim);font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.5px}
+  .hist-sum-val{font-weight:700;font-family:var(--mono)}
+  .sparkline-wrap{margin-top:12px;padding-top:12px;border-top:1px solid var(--line)}
+  .sparkline-title{font-size:9px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.8px;font-family:var(--mono);margin-bottom:8px}
+  .sparkline-svg{width:100%;height:60px;display:block}
+  .overextended-warning{margin-top:10px;padding:8px 12px;background:rgba(227,76,92,.1);border:1px solid rgba(227,76,92,.3);border-radius:4px;font-size:11px;color:var(--red);display:flex;align-items:center;gap:8px}
+
+  .log-head{display:flex;justify-content:space-between;align-items:center;margin:24px 0 12px}
+  .section-title{font-size:11px;font-weight:600;color:var(--text-dim);text-transform:uppercase;letter-spacing:.8px;font-family:var(--mono)}
+  .log-box{background:var(--bg-1);border:1px solid var(--line);border-radius:6px;max-height:240px;overflow-y:auto}
+  #log-box-main{min-height:90px;border-color:var(--line-2)}
+  #log-box-main:has(.log-row){border-color:rgba(227,76,92,.35);box-shadow:0 0 0 1px rgba(227,76,92,.15)}
+  .log-row{display:grid;grid-template-columns:60px 70px 1fr auto;gap:12px;align-items:center;padding:9px 16px;border-bottom:1px solid var(--line);font-size:11px;font-family:var(--mono)}
+  .log-row:last-child{border-bottom:none}
+  .log-time{color:var(--text-dim)}
+  .log-token{font-weight:600;color:var(--text-hi);font-family:var(--sans)}
+  .log-msg{color:var(--text)}
+  .log-empty{padding:24px;text-align:center;color:var(--text-dim);font-size:11px;font-family:var(--mono)}
+  .small-link{background:none;border:none;color:var(--text-dim);cursor:pointer;font-family:var(--sans);font-size:11px;transition:color .15s}
+  .small-link:hover{color:var(--text)}
+
+  .grid-2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  .card{background:var(--bg-1);border:1px solid var(--line);border-radius:6px;padding:18px 20px}
+  .card h3{font-size:11px;font-weight:600;color:var(--text-dim);text-transform:uppercase;letter-spacing:.8px;margin-bottom:14px;padding-bottom:10px;border-bottom:1px solid var(--line);font-family:var(--mono)}
+  .weight-row{display:flex;align-items:center;padding:8px 0;gap:12px;border-bottom:1px solid var(--line)}
+  .weight-row:last-child{border-bottom:none}
+  .weight-info{flex:1}
+  .weight-name{font-size:12px;color:var(--text)}
+  .weight-stats{font-size:10px;color:var(--text-dim);margin-top:3px;font-family:var(--mono)}
+  .weight-bar-wrap{width:80px;height:4px;background:var(--line);border-radius:2px;overflow:hidden}
+  .weight-bar{height:100%;transition:width .5s}
+  .weight-num{font-weight:600;min-width:30px;text-align:right;font-family:var(--mono);font-size:12px}
+  .empty-state{padding:28px;text-align:center;color:var(--text-dim);font-size:12px}
+
+  .info-grid{column-count:2;column-gap:16px}
+  .info-card{background:var(--bg-1);border:1px solid var(--line);border-radius:6px;padding:20px 22px;break-inside:avoid;margin-bottom:16px;display:inline-block;width:100%}
+  .info-card h3{font-size:12px;font-weight:700;color:var(--text-hi);text-transform:uppercase;letter-spacing:1px;margin-bottom:14px;padding-bottom:10px;border-bottom:1px solid var(--line);font-family:var(--mono)}
+  .glos-item{margin-bottom:16px}
+  .glos-item:last-child{margin-bottom:0}
+  .glos-term{font-size:12px;font-weight:700;color:var(--text-hi);margin-bottom:5px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .glos-tag{font-size:9px;font-weight:600;padding:2px 7px;border-radius:2px;font-family:var(--mono);letter-spacing:.5px}
+  .tag-ind{background:rgba(96,165,250,.15);color:var(--blue)}
+  .tag-cond{background:rgba(74,222,128,.15);color:var(--green)}
+  .tag-config{background:rgba(251,191,36,.15);color:var(--amber)}
+  .tag-tech{background:rgba(227,76,92,.15);color:var(--red)}
+  .tag-vis{background:rgba(168,168,168,.15);color:var(--text-mid)}
+  .glos-def{font-size:12px;color:var(--text-mid);line-height:1.65}
+  .glos-def strong{color:var(--text);font-weight:600}
+  .glos-def code{background:var(--bg-3);color:var(--amber);padding:1px 5px;border-radius:3px;font-family:var(--mono);font-size:11px}
+
+  /* Tabla de pesos */
+  .weights-table{width:100%;border-collapse:collapse;margin-top:8px;font-size:11px}
+  .weights-table th{background:var(--bg-2);color:var(--text-dim);font-family:var(--mono);text-transform:uppercase;letter-spacing:.5px;font-size:9px;font-weight:600;padding:8px 10px;text-align:left;border-bottom:1px solid var(--line-2)}
+  .weights-table th.right{text-align:right}
+  .weights-table td{padding:9px 10px;border-bottom:1px solid var(--line);font-family:var(--mono);font-size:11px;color:var(--text)}
+  .weights-table tr:last-child td{border-bottom:none}
+  .weights-table tr.total-row td{background:var(--bg-2);font-weight:700;color:var(--text-hi);border-top:2px solid var(--line-2)}
+  .weights-table .wname{font-family:var(--sans);font-weight:600;color:var(--text-hi)}
+  .weights-table .wpts{text-align:right;color:var(--amber);font-weight:600}
+  .weights-table .wbar-cell{width:90px;padding:9px 6px}
+  .weights-table .wbar{height:6px;background:var(--bg-3);border-radius:3px;overflow:hidden;position:relative}
+  .weights-table .wbar-fill{height:100%;background:linear-gradient(90deg,var(--red),var(--amber));border-radius:3px;transition:width .4s}
+  .weights-table .wdesc{color:var(--text-mid);font-size:10px;line-height:1.4}
+  .weights-note{font-size:10px;color:var(--text-dim);margin-top:10px;line-height:1.5;font-style:italic}
+
+  .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.7);backdrop-filter:blur(4px);z-index:100;display:none;align-items:center;justify-content:center}
+  .modal-bg.show{display:flex}
+  .modal{background:var(--bg-1);border:1px solid var(--line-2);border-radius:8px;padding:20px 24px;max-width:380px;width:90%}
+  .modal h3{font-size:14px;color:var(--text-hi);margin-bottom:10px}
+  .modal p{font-size:12px;color:var(--text-mid);margin-bottom:16px;line-height:1.5}
+  .modal-actions{display:flex;gap:8px;justify-content:flex-end}
+
+  @media(max-width:900px){.stats{grid-template-columns:repeat(3,1fr)}.info-grid{column-count:1}.grid-2{grid-template-columns:1fr}}
+  @media(max-width:500px){.stats{grid-template-columns:repeat(2,1fr)}}
+  ::-webkit-scrollbar{width:6px;height:6px}
+  ::-webkit-scrollbar-track{background:var(--bg)}
+  ::-webkit-scrollbar-thumb{background:var(--line-2);border-radius:3px}
+  ::-webkit-scrollbar-thumb:hover{background:var(--text-dim)}
+</style>
+</head>
+<body>
+<div class="container">
+
+<header>
+  <div class="brand"><span class="brand-dot"></span>Short Scanner<span class="brand-sub">v22 · Binance</span></div>
+  <div class="header-right">
+    <div class="h-item"><span class="led" id="led"></span><span id="status">inactivo</span></div>
+    <div class="h-sep"></div>
+    <div class="h-item" id="tg-indicator" style="display:none" title="Notificaciones Telegram activas">
+      <span style="color:var(--green)">📱</span>
+      <span style="color:var(--text-dim);font-size:11px">TG</span>
+    </div>
+    <div class="h-sep" id="tg-sep" style="display:none"></div>
+    <div class="h-item">Modo <span id="mode-badge" style="background:var(--bg-3);color:var(--text-hi);padding:2px 8px;border-radius:3px;font-weight:600;font-size:11px;border:1px solid var(--line-2)">Estricto</span></div>
+    <div class="h-sep"></div>
+    <div class="h-item">BTC <span id="btc-status" style="color:var(--text)">—</span></div>
+    <div class="h-sep"></div>
+    <div class="h-item" title="Tiempo restante para que cierre la vela 4H actual">
+      <span style="color:var(--text-dim)">4H</span>
+      <span id="candle-4h" style="color:var(--blue)">—</span>
+    </div>
+    <div class="h-sep"></div>
+    <div class="h-item" title="Tiempo restante para que cierre la vela diaria actual">
+      <span style="color:var(--text-dim)">1D</span>
+      <span id="candle-1d" style="color:var(--amber)">—</span>
+    </div>
+    <div class="h-sep"></div>
+    <div class="h-item" id="last-update">—</div>
+    <div class="h-sep"></div>
+    <div class="h-item" id="next-txt">—</div>
+  </div>
+</header>
+
+<div class="tabs">
+  <div class="tab active" onclick="switchTab('scanner',this)">Scanner</div>
+  <div class="tab" onclick="switchTab('learning',this)">Aprendizaje</div>
+  <div class="tab" onclick="switchTab('info',this)">Info y Glosario</div>
+</div>
+
+<div class="tab-content active" id="tab-scanner">
+  <div class="toolbar">
+    <div class="ctl">
+      <span class="ctl-label">Modo</span>
+      <div class="toggle">
+        <button id="mode-strict" class="active" onclick="setMode('strict')">Estricto</button>
+        <button id="mode-flex" onclick="setMode('flex')">Flexible</button>
+      </div>
+    </div>
+    <div class="ctl"><span class="ctl-label">Top</span><input type="number" id="cfg-top" value="30" min="10" max="100" style="width:60px"></div>
+    <div class="ctl"><span class="ctl-label">Pump &gt;</span><input type="number" id="cfg-change" value="80"><span style="color:var(--text-dim);font-size:11px">%</span></div>
+    <div class="ctl"><span class="ctl-label">Vol mín</span><input type="number" id="cfg-volmin" value="1000000" step="100000" style="width:110px"></div>
+    <div style="margin-left:auto;display:flex;gap:8px">
+      <button class="btn" onclick="fetchNow()">↻ Actualizar</button>
+      <button class="btn btn-primary" id="btn-main" onclick="toggleMain()">▶ Iniciar</button>
+    </div>
+  </div>
+
+  <div class="stats">
+    <div class="stat"><div class="stat-label">Tokens</div><div class="stat-val" id="st-total">—</div></div>
+    <div class="stat"><div class="stat-label">Go Short</div><div class="stat-val red" id="st-go">—</div></div>
+    <div class="stat"><div class="stat-label">Cerca</div><div class="stat-val amber" id="st-near">—</div></div>
+    <div class="stat"><div class="stat-label">Vigilar</div><div class="stat-val blue" id="st-watch">—</div></div>
+    <div class="stat"><div class="stat-label">Mayor subida</div><div class="stat-val sm green" id="st-top">—</div></div>
+    <div class="stat"><div class="stat-label">Próximo scan</div><div class="stat-val sm" id="st-countdown">—</div></div>
+  </div>
+
+  <div class="progress"><div class="progress-fill" id="prog-fill"></div></div>
+
+  <!-- LOG DE ALERTAS (movido arriba para visibilidad) -->
+  <div class="log-head" style="margin-top:0">
+    <div class="section-title" style="display:flex;align-items:center;gap:8px">
+      <span style="color:var(--red)">⚡</span> Alertas activas
+      <span id="log-count" style="background:var(--bg-3);color:var(--text-dim);padding:1px 7px;border-radius:10px;font-size:10px;font-family:var(--mono)">0</span>
+    </div>
+    <button class="small-link" onclick="clearLog()">Limpiar</button>
+  </div>
+  <div class="log-box" id="log-box-main"><div id="log"><div class="log-empty">En espera de condiciones — las alertas GO SHORT y CERCA aparecerán aquí en cuanto el scanner las detecte</div></div></div>
+
+  <div class="section-title" style="margin-top:24px;margin-bottom:12px">Tokens analizados</div>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th style="width:28px">#</th>
+          <th>Token</th>
+          <th class="right">Precio</th>
+          <th class="right" title="Cambio porcentual en las últimas 24 horas">24h</th>
+          <th class="right" title="Volumen total negociado en USDT en 24h">Volumen</th>
+          <th class="right" title="Funding Rate de futuros perpetuos. Positivo alto = longs sobreapalancados">FR %</th>
+          <th class="right" title="RSI sobre velas 4H. >80 = sobrecompra extrema, >70 = sobrecompra">RSI 4h</th>
+          <th title="Últimas 5 velas de 4H. Rojas al final = posible reversión">Velas 4h</th>
+          <th title="Estado de las 6 condiciones del scoring: Pump · Funding · RSI · Velas · BTC · Liquidez">Conds</th>
+          <th title="Score compuesto 0-100. Mientras más alto, mejor oportunidad de short">Score</th>
+          <th title="Veredicto final del scanner sobre la viabilidad del short">Veredicto</th>
+        </tr>
+      </thead>
+      <tbody id="tbody">
+        <tr><td colspan="11" class="log-empty">Presiona ▶ Iniciar para comenzar el monitoreo</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="tab-content" id="tab-learning">
+  <div class="grid-2">
+    <div class="card">
+      <h3>Rendimiento</h3>
+      <div class="stats" style="grid-template-columns:repeat(3,1fr);margin-bottom:0">
+        <div class="stat"><div class="stat-label">Trades</div><div class="stat-val" id="lr-total">0</div></div>
+        <div class="stat"><div class="stat-label">Aciertos</div><div class="stat-val green" id="lr-winrate">—</div></div>
+        <div class="stat"><div class="stat-label">Pendientes</div><div class="stat-val amber" id="lr-pending">0</div></div>
+      </div>
+      <p style="font-size:11px;color:var(--text-dim);margin-top:14px;line-height:1.6">
+        Cada alerta puede registrarse como trade. Al marcar el resultado, los pesos de cada condición se recalibran automáticamente según qué señales predicen mejor las caídas reales.
+      </p>
+    </div>
+    <div class="card">
+      <h3>Pesos de condiciones aprendidos</h3>
+      <div id="weights-container"><div class="empty-state">Registra 5+ trades completados para ver patrones</div></div>
+    </div>
+    <div class="card" style="grid-column:1/-1">
+      <h3>Historial de trades</h3>
+      <div style="overflow-x:auto">
+        <table style="width:100%;font-size:11px">
+          <thead>
+            <tr>
+              <th>Fecha</th><th>Token</th>
+              <th class="right">Entrada</th><th class="right">24h%</th>
+              <th class="right">FR%</th><th class="right">RSI</th>
+              <th>Rojas</th><th class="right">Score</th>
+              <th>Resultado</th><th></th>
+            </tr>
+          </thead>
+          <tbody id="trade-rows"><tr><td colspan="10" class="log-empty">Sin trades registrados</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="tab-content" id="tab-info">
+  <div class="info-grid">
+
+      <div class="info-card">
+        <h3>¿Cómo funciona el scanner?</h3>
+        <div class="glos-item">
+          <div class="glos-term">1. Detección automática</div>
+          <div class="glos-def">Cada <strong>2 minutos</strong>, el scanner consulta la API pública de Binance y descarga todos los pares USDT del mercado. Filtra stablecoins y pares con volumen insuficiente. Luego toma los <strong>N top gainers</strong> del día (configurable).</div>
+        </div>
+        <div class="glos-item">
+          <div class="glos-term">2. Análisis profundo por token</div>
+          <div class="glos-def">Para cada token consulta en paralelo: <strong>velas 4H</strong> (para RSI y confirmación de velas rojas) y el <strong>Funding Rate</strong> de Binance Futures. Todos los datos vienen de la API oficial de Binance, sin intermediarios.</div>
+        </div>
+        <div class="glos-item">
+          <div class="glos-term">3. Score gradual 0–100</div>
+          <div class="glos-def">Cada condición aporta puntos <strong>proporcionales a qué tan cerca está del umbral</strong>, no de forma binaria. Un RSI de 78 aporta el 85% de los puntos del RSI, no cero. Esto permite que el ordenamiento refleje cuáles tokens están más "encaminados" hacia el short.</div>
+        </div>
+        <div class="glos-item">
+          <div class="glos-term">4. Ordenamiento inteligente</div>
+          <div class="glos-def">La lista se ordena por: <strong>Score ↓ → Condiciones cumplidas ↓ → Cambio 24h ↓</strong>. Los tokens más encaminados aparecen siempre arriba, sin importar si tienen el pump más grande del día.</div>
+        </div>
+        <div class="glos-item">
+          <div class="glos-term">5. Dos modos: <span style="background:var(--bg-3);color:var(--text-hi);padding:1px 7px;border-radius:3px;font-size:11px;border:1px solid var(--line-2)">Estricto</span> y <span style="background:var(--amber-bg);color:var(--amber);padding:1px 7px;border-radius:3px;font-size:11px;border:1px solid rgba(251,191,36,.4)">Flexible</span></div>
+          <div class="glos-def"><strong>Estricto:</strong> requiere pump ≥ umbral configurado para dar GO SHORT. RSI threshold 80. Solo activa señales en condiciones claras.<br><br>
+          <strong>Flexible:</strong> acepta confluencia técnica fuerte (velas rojas + FR positivo + RSI alto) aunque el pump no llegue al umbral. RSI threshold 75. Detecta oportunidades más tempranas, útil cuando no hay pumps grandes en el mercado.<br><br>
+          Las notificaciones de Telegram <strong>incluyen el modo activo</strong> al momento de la alerta para que sepas con qué criterio se generó.</div>
+        </div>
+      </div>
+
+      <div class="info-card">
+        <h3>Veredictos</h3>
+        <div class="glos-item">
+          <div class="glos-term"><span class="pill pill-go">GO SHORT</span></div>
+          <div class="glos-def">Todas las condiciones se cumplen y hay al menos una vela roja confirmatoria en 4H. <strong>Este es el momento de evaluar la entrada</strong>.</div>
+        </div>
+        <div class="glos-item">
+          <div class="glos-term"><span class="pill pill-near">CERCA</span></div>
+          <div class="glos-def">El pump está activo y el RSI o el funding rate confirman la sobrecompra, pero <strong>aún no apareció la vela roja</strong>. Ponlo en vigilancia activa, puede cambiar en el próximo scan.</div>
+        </div>
+        <div class="glos-item">
+          <div class="glos-term"><span class="pill pill-watch">VIGILAR</span></div>
+          <div class="glos-def">El pump fue detectado pero faltan confirmaciones técnicas. Puede ser el inicio de algo. Monitorear.</div>
+        </div>
+        <div class="glos-item">
+          <div class="glos-term"><span class="pill pill-btc">BTC ↓</span></div>
+          <div class="glos-def">Hay pump pero <strong>BTC está cayendo más de 2%</strong>. Las altcoins suelen seguir a BTC, así que el short pierde edge: la alt va a caer con o sin tu trade, y el rebote técnico es más probable. Mejor esperar a que BTC se estabilice.</div>
+        </div>
+      </div>
+
+      <div class="info-card">
+        <h3>Glosario de indicadores</h3>
+        <div class="glos-item">
+          <div class="glos-term">Funding Rate (FR%) <span class="glos-tag tag-ind">Indicador</span></div>
+          <div class="glos-def">Tasa que pagan los longs a los shorts (o viceversa) cada 8 horas en los futuros perpetuos de Binance. Si es <strong style="color:var(--red)">positiva alta (&gt;0.05%)</strong>, significa que los longs están sobreapalancados y deben pagar para mantener su posición. <strong>Buen entorno para shortear</strong>. Si es negativa, hay riesgo de short squeeze.</div>
+        </div>
+        <div class="glos-item">
+          <div class="glos-term">RSI 4h <span class="glos-tag tag-ind">Indicador</span></div>
+          <div class="glos-def">Índice de Fuerza Relativa calculado sobre velas de 4 horas. Mide el momentum reciente en escala 0–100. <strong>RSI &gt;80</strong> indica sobrecompra extrema, alta probabilidad de corrección. <strong>RSI &gt;70</strong> ya es sobrecompra moderada. En modo Flexible el umbral baja a 75.</div>
+        </div>
+        <div class="glos-item">
+          <div class="glos-term">Divergencia bajista <span class="glos-tag tag-ind">Indicador</span></div>
+          <div class="glos-def">Discrepancia entre el precio y el RSI: el precio hace un <strong>máximo más alto</strong>, pero el RSI hace un <strong>máximo más bajo</strong>. Esto significa que el momentum se debilita aunque la subida continúe. Es de las señales más anticipatorias para shortear: te avisa de la reversión antes de que suceda. El scanner detecta esto automáticamente sobre las últimas 25 velas 4H y mide la <strong>fuerza</strong> de la divergencia (porcentaje).</div>
+        </div>
+        <div class="glos-item">
+          <div class="glos-term">Velas 4h <span class="glos-tag tag-ind">Indicador</span></div>
+          <div class="glos-def">Las últimas <strong>5 velas de 4 horas</strong> del token. <span style="color:var(--green)">Verde</span> = cerró arriba (presión compradora). <span style="color:var(--red)">Rojo</span> = cerró abajo (presión vendedora). El <strong>"ultimátum confirmatorio"</strong> aparece cuando ves 1–2 velas rojas seguidas al final tras una secuencia verde: el momentum se revirtió.</div>
+        </div>
+        <div class="glos-item">
+          <div class="glos-term">BTC trend <span class="glos-tag tag-ind">Indicador</span></div>
+          <div class="glos-def">Cambio porcentual de BTC en 24h. Si cae más de 2%, invalida los shorts en altcoins porque el mercado entero está en modo riesgo-off y los rebotes técnicos son violentos.</div>
+        </div>
+        <div class="glos-item">
+          <div class="glos-term">Volumen 24h <span class="glos-tag tag-ind">Indicador</span></div>
+          <div class="glos-def">Volumen total negociado en USDT en las últimas 24 horas. <strong>Mínimo recomendable: &gt;10M USDT</strong> para garantizar liquidez al entrar y salir del short sin slippage agresivo.</div>
+        </div>
+      </div>
+
+      <div class="info-card">
+        <h3>Condiciones del score</h3>
+        <div class="glos-item">
+          <div class="glos-term">Pump <span class="glos-tag tag-cond">Condición</span> <span class="glos-tag tag-config">15 pts</span></div>
+          <div class="glos-def">El token subió al menos el umbral configurado (por defecto <code>80%</code>) en 24h. Detecta el rally extremo que precede a la corrección.</div>
+        </div>
+        <div class="glos-item">
+          <div class="glos-term">Funding <span class="glos-tag tag-cond">Condición</span> <span class="glos-tag tag-config">20 pts</span></div>
+          <div class="glos-def">Funding rate &gt;0.05%. Confirma que los longs están sobreapalancados y la presión vendedora viene cuando empiecen a liquidarse.</div>
+        </div>
+        <div class="glos-item">
+          <div class="glos-term">Velas rojas <span class="glos-tag tag-cond">Condición</span> <span class="glos-tag tag-config">25 pts</span></div>
+          <div class="glos-def"><strong>El ultimátum.</strong> Requiere <strong>al menos 2 velas rojas consecutivas y CERRADAS</strong> al final del timeframe 4H. Solo cuentan velas ya cerradas — la vela en curso (que aún se está formando) se ignora para evitar falsos positivos. Esta es la condición más importante porque confirma que el momentum se revirtió de forma sostenida, no solo un titubeo momentáneo.</div>
+        </div>
+        <div class="glos-item">
+          <div class="glos-term">RSI <span class="glos-tag tag-cond">Condición</span> <span class="glos-tag tag-config">10 pts</span></div>
+          <div class="glos-def">RSI 4h &gt;80 (estricto) o &gt;75 (flexible). Confluencia adicional de sobrecompra. <em>Menos peso que la divergencia porque un RSI alto puede mantenerse así por mucho tiempo sin que el precio caiga.</em></div>
+        </div>
+        <div class="glos-item">
+          <div class="glos-term">Divergencia bajista <span class="glos-tag tag-cond">Condición</span> <span class="glos-tag tag-config">20 pts</span></div>
+          <div class="glos-def"><strong>Una de las señales más confiables.</strong> Ocurre cuando el precio hace un máximo más alto que el anterior, pero el RSI hace un máximo más bajo. Esto indica que el momentum se está debilitando aunque el precio aún suba — un anticipo del agotamiento del rally. Más predictiva que el RSI alto a secas.</div>
+        </div>
+        <div class="glos-item">
+          <div class="glos-term">BTC OK <span class="glos-tag tag-cond">Condición</span> <span class="glos-tag tag-config">5 pts</span></div>
+          <div class="glos-def">BTC no está cayendo más de 2%. Si BTC está estable o subiendo, el short tiene edge.</div>
+        </div>
+        <div class="glos-item">
+          <div class="glos-term">Liquidez <span class="glos-tag tag-cond">Condición</span> <span class="glos-tag tag-config">5 pts</span></div>
+          <div class="glos-def">Volumen 24h &gt;10M USDT. Garantiza poder entrar y salir sin problemas.</div>
+        </div>
+      </div>
+
+      <div class="info-card">
+        <h3>Tabla de pesos del score</h3>
+        <p style="font-size:11px;color:var(--text-dim);line-height:1.6;margin-bottom:6px">
+          Cada condición aporta puntos al score final (0–100). Cuanto más peso tiene, más impacta en la decisión final de GO SHORT.
+        </p>
+        <div style="overflow-x:auto">
+        <table class="weights-table">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Condición</th>
+              <th class="right">Pts</th>
+              <th class="right">%</th>
+              <th>Distribución</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>1</td>
+              <td><span class="wname">Velas rojas</span><br><span class="wdesc">2+ rojas consecutivas cerradas</span></td>
+              <td class="wpts">25</td>
+              <td class="wpts">25%</td>
+              <td class="wbar-cell"><div class="wbar"><div class="wbar-fill" style="width:100%"></div></div></td>
+            </tr>
+            <tr>
+              <td>2</td>
+              <td><span class="wname">Funding rate</span><br><span class="wdesc">FR ≥ 0.05%</span></td>
+              <td class="wpts">20</td>
+              <td class="wpts">20%</td>
+              <td class="wbar-cell"><div class="wbar"><div class="wbar-fill" style="width:80%"></div></div></td>
+            </tr>
+            <tr>
+              <td>3</td>
+              <td><span class="wname">Divergencia bajista</span><br><span class="wdesc">RSI baja mientras precio sube</span></td>
+              <td class="wpts">20</td>
+              <td class="wpts">20%</td>
+              <td class="wbar-cell"><div class="wbar"><div class="wbar-fill" style="width:80%"></div></div></td>
+            </tr>
+            <tr>
+              <td>4</td>
+              <td><span class="wname">Pump</span><br><span class="wdesc">Cambio 24h ≥ umbral</span></td>
+              <td class="wpts">15</td>
+              <td class="wpts">15%</td>
+              <td class="wbar-cell"><div class="wbar"><div class="wbar-fill" style="width:60%"></div></div></td>
+            </tr>
+            <tr>
+              <td>5</td>
+              <td><span class="wname">RSI 4h</span><br><span class="wdesc">≥ 80 estricto / ≥ 75 flex</span></td>
+              <td class="wpts">10</td>
+              <td class="wpts">10%</td>
+              <td class="wbar-cell"><div class="wbar"><div class="wbar-fill" style="width:40%"></div></div></td>
+            </tr>
+            <tr>
+              <td>6</td>
+              <td><span class="wname">BTC OK</span><br><span class="wdesc">BTC no cayendo &gt; 2%</span></td>
+              <td class="wpts">5</td>
+              <td class="wpts">5%</td>
+              <td class="wbar-cell"><div class="wbar"><div class="wbar-fill" style="width:20%"></div></div></td>
+            </tr>
+            <tr>
+              <td>7</td>
+              <td><span class="wname">Liquidez</span><br><span class="wdesc">Volumen 24h ≥ 10M USDT</span></td>
+              <td class="wpts">5</td>
+              <td class="wpts">5%</td>
+              <td class="wbar-cell"><div class="wbar"><div class="wbar-fill" style="width:20%"></div></div></td>
+            </tr>
+            <tr class="total-row">
+              <td colspan="2">TOTAL</td>
+              <td class="wpts">100</td>
+              <td class="wpts">100%</td>
+              <td></td>
+            </tr>
+          </tbody>
+        </table>
+        </div>
+        <p class="weights-note">
+          <strong>Nota:</strong> estos son los pesos por defecto. Si registras trades y marcas su resultado, el sistema de aprendizaje ajusta los pesos automáticamente según qué condiciones predicen mejor las caídas en TU experiencia. Los pesos actualizados se ven en la pestaña <strong>Aprendizaje</strong>.
+        </p>
+      </div>
+
+      <div class="info-card">
+        <h3>Elementos visuales</h3>
+        <div class="glos-item">
+          <div class="glos-term">Columna "Conds" <span class="glos-tag tag-vis">Visual</span></div>
+          <div class="glos-def">Siete puntos circulares que muestran el estado de cada condición de un vistazo, en orden: Pump · Funding · RSI · Divergencia · Velas · BTC · Liquidez.<br>
+          <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--green);vertical-align:middle"></span> Verde = cumplida<br>
+          <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--amber);vertical-align:middle"></span> Ámbar = cerca de cumplirse<br>
+          <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--text-dim);opacity:.4;vertical-align:middle"></span> Gris = no cumplida</div>
+        </div>
+        <div class="glos-item">
+          <div class="glos-term">Columna "Score" <span class="glos-tag tag-vis">Visual</span></div>
+          <div class="glos-def">Score compuesto 0–100. <span style="color:var(--red)">Rojo &gt;75</span>: oportunidad fuerte. <span style="color:var(--amber)">Ámbar 55–75</span>: muy cerca. <span style="color:var(--blue)">Azul 35–55</span>: vigilar. <span style="color:var(--text-dim)">Gris &lt;35</span>: lejos.</div>
+        </div>
+        <div class="glos-item">
+          <div class="glos-term">Contadores 4H / 1D <span class="glos-tag tag-vis">Visual</span></div>
+          <div class="glos-def">En el header arriba aparecen dos contadores regresivos: <strong>4H</strong> y <strong>1D</strong>. Indican cuánto falta para que cierren la próxima vela de 4 horas y la diaria respectivamente.<br>
+          <br>
+          <strong>¿Por qué importa?</strong> Las velas se cierran en horarios UTC fijos. Una vela roja que confirme reversión solo cuenta cuando la vela <em>cierra</em>, no mientras se forma. Si el contador 4H marca 5 minutos, significa que en 5 minutos sabrás si la vela actual realmente cerró roja o no.<br>
+          <br>
+          <span style="color:var(--blue)">Azul</span> = falta más de 1h · <span style="color:var(--amber)">Ámbar</span> = falta menos de 1h (4H) o 2h (1D) · <span style="color:var(--red)">Rojo</span> = el cierre es inminente, momento de tener el chart abierto.</div>
+        </div>
+
+        <div class="glos-item">
+          <div class="glos-term">LED de estado <span class="glos-tag tag-vis">Visual</span></div>
+          <div class="glos-def">Arriba a la derecha. <span style="color:var(--green)">Verde</span> = scanner activo. <span style="color:var(--amber)">Ámbar</span> = cargando. <span style="color:var(--red)">Rojo</span> = error de API.</div>
+        </div>
+        <div class="glos-item">
+          <div class="glos-term">Click en fila <span class="glos-tag tag-vis">Visual</span></div>
+          <div class="glos-def">Al hacer click en cualquier fila se despliega el <strong>detalle expandido</strong> con los puntos exactos de cada condición, el <strong>rendimiento histórico</strong> de los últimos días y los botones de acción.</div>
+        </div>
+
+        <div class="glos-item">
+          <div class="glos-term">Rendimiento histórico <span class="glos-tag tag-vis">Visual</span></div>
+          <div class="glos-def">Al expandir un token se cargan los datos de Binance de los últimos 8 días:<br>
+          • <strong>Hace 3 días / Hace 2 días / Ayer:</strong> % de cambio de cada día completo<br>
+          • <strong>Acumulado 3d:</strong> cambio total de los últimos 3 días cerrados<br>
+          • <strong>Acumulado 7d:</strong> cambio total de la semana completa<br>
+          • <strong>Sparkline:</strong> mini gráfico de línea con el precio de los últimos 8 días<br>
+          Si el acumulado 7d &gt;150% o el 3d &gt;100%, aparece una advertencia de <strong style="color:var(--red)">"sobreextendido"</strong>: el rally está muy estirado y el agotamiento es probable, lo cual es <strong>positivo para shortear</strong>.</div>
+        </div>
+      </div>
+
+      <div class="info-card">
+        <h3>Sistema de aprendizaje</h3>
+        <div class="glos-item">
+          <div class="glos-term">Registrar trade <span class="glos-tag tag-tech">Aprendizaje</span></div>
+          <div class="glos-def">Cuando entres a un short basado en una alerta, presiona "+ Registrar trade" en el detalle expandido. El sistema guarda el snapshot completo de las condiciones en ese momento.</div>
+        </div>
+        <div class="glos-item">
+          <div class="glos-term">Marcar resultado <span class="glos-tag tag-tech">Aprendizaje</span></div>
+          <div class="glos-def">Cuando cierres el trade, ve a la pestaña Aprendizaje y márcalo como <strong style="color:var(--green)">✓ Ganador</strong> o <strong style="color:var(--red)">✗ Perdedor</strong>.</div>
+        </div>
+        <div class="glos-item">
+          <div class="glos-term">Recalibración de pesos <span class="glos-tag tag-tech">Aprendizaje</span></div>
+          <div class="glos-def">Después de 3+ trades cerrados, los pesos de cada condición se ajustan según su win rate real. Si descubres que "Funding &gt;0.05%" tiene 90% de aciertos pero "RSI &gt;80" solo 40%, el sistema dará más peso al funding rate en futuros scores. Después de 20+ trades los pesos reflejan TU estilo de trading.</div>
+        </div>
+        <div class="glos-item">
+          <div class="glos-term">Exportar / Importar <span class="glos-tag tag-tech">Aprendizaje</span></div>
+          <div class="glos-def">Tus trades y pesos aprendidos se guardan en el navegador (<code>localStorage</code>). Puedes exportarlos a JSON para respaldo o para compartir con otro dispositivo.</div>
+        </div>
+
+        <div class="glos-item">
+          <div class="glos-term">Notificaciones Telegram <span class="glos-tag tag-tech">Aprendizaje</span></div>
+          <div class="glos-def">Configurando tu <strong>bot token</strong> y <strong>chat ID</strong> de Telegram, el scanner envía alertas push a tu celular.<br><br>
+          <strong>Comportamiento anti-spam:</strong><br>
+          • <strong>GO SHORT:</strong> notificación inmediata. <em>Cooldown de 24h por token</em>: aunque entre/salga del estado durante el día, no recibes spam.<br>
+          • <strong>CERCA:</strong> notificación una sola vez por token por día. Cuando aparece un NUEVO token CERCA, el mensaje incluye un recordatorio de los tokens previos en CERCA hoy, así no pierdes contexto pero tampoco saturas.<br>
+          • A medianoche local se resetea el tracking diario.<br><br>
+          Los datos se guardan solo en tu navegador, nunca salen a otros servidores.</div>
+        </div>
+      </div>
+
+      <div class="info-card">
+        <h3>Configuración</h3>
+        <div class="glos-item">
+          <div class="glos-term">Top N <span class="glos-tag tag-config">Config</span></div>
+          <div class="glos-def">Cantidad de tokens a analizar (10–100). Más tokens = más oportunidades pero más lento. Recomendado: 30.</div>
+        </div>
+        <div class="glos-item">
+          <div class="glos-term">Pump &gt; <span class="glos-tag tag-config">Config</span></div>
+          <div class="glos-def">Umbral mínimo de subida en 24h. Por defecto 80%. Puedes bajarlo si el mercado está calmado y no hay pumps tan grandes.</div>
+        </div>
+        <div class="glos-item">
+          <div class="glos-term">Vol mín <span class="glos-tag tag-config">Config</span></div>
+          <div class="glos-def">Volumen 24h mínimo en USDT para incluir el token. Filtra tokens sin liquidez. Recomendado: 1M+.</div>
+        </div>
+      </div>
+
+      <div class="info-card">
+        <h3>Notificaciones por Telegram</h3>
+        <p style="font-size:11px;color:var(--text-dim);line-height:1.6;margin-bottom:12px">
+          Recibe alertas instantáneas en tu Telegram cuando aparezcan señales. Las notificaciones incluyen el modo activo (Estricto o Flexible) y cuánto falta para el cierre de la próxima vela 4H. Los datos se guardan solo en tu navegador.
+        </p>
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <div>
+            <label style="font-size:10px;color:var(--text-dim);font-family:var(--mono);text-transform:uppercase;letter-spacing:.5px;display:block;margin-bottom:4px">Bot Token</label>
+            <input type="password" id="tg-token" placeholder="1234567890:AAFxxxx..." style="width:100%;background:var(--bg-2);border:1px solid var(--line-2);color:var(--text-hi);font-family:var(--mono);font-size:11px;padding:7px 10px;border-radius:4px;outline:none">
+          </div>
+          <div>
+            <label style="font-size:10px;color:var(--text-dim);font-family:var(--mono);text-transform:uppercase;letter-spacing:.5px;display:block;margin-bottom:4px">Chat ID</label>
+            <input type="text" id="tg-chatid" placeholder="123456789" style="width:100%;background:var(--bg-2);border:1px solid var(--line-2);color:var(--text-hi);font-family:var(--mono);font-size:11px;padding:7px 10px;border-radius:4px;outline:none">
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;padding:8px 0">
+            <input type="checkbox" id="tg-include-near" style="cursor:pointer">
+            <label for="tg-include-near" style="font-size:12px;color:var(--text);cursor:pointer">Notificar también alertas CERCA (no solo GO SHORT)</label>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:4px">
+            <button class="btn btn-primary" onclick="saveTelegramConfig()">Guardar</button>
+            <button class="btn" onclick="testTelegram()">Enviar prueba</button>
+            <button class="btn btn-danger" onclick="clearTelegramConfig()">Borrar</button>
+            <span id="tg-status" style="font-size:11px;color:var(--text-dim);margin-left:auto"></span>
+          </div>
+        </div>
+      </div>
+
+      <div class="info-card">
+        <h3>Datos</h3>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn" onclick="exportData()">Exportar JSON</button>
+          <button class="btn" onclick="document.getElementById('import-file').click()">Importar JSON</button>
+          <button class="btn btn-danger" onclick="resetLearning()">Resetear aprendizaje</button>
+        </div>
+        <input type="file" id="import-file" style="display:none" accept=".json" onchange="handleImport(event)">
+      </div>
+  </div>
+</div>
+
+</div>
+
+<div class="modal-bg" id="modal" onclick="closeModal(event)">
+  <div class="modal" onclick="event.stopPropagation()">
+    <h3 id="modal-title">Trade registrado</h3>
+    <p id="modal-body">—</p>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal()">Entendido</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const STABLE = new Set(['USDC','BUSD','TUSD','USDP','FDUSD','USDT','DAI','FRAX','SUSD','LUSD','PYUSD','USDD','GUSD']);
+const COUNTDOWN_TOTAL = 120; // 2 minutos
+const CANDLES_TO_SHOW = 5;
+
+// ════ CONTADORES DE CIERRE DE VELA ════
+function timeToNext4hCandle() {
+  // Las velas 4H de Binance cierran en horas UTC: 00, 04, 08, 12, 16, 20
+  const now = new Date();
+  const utcHour = now.getUTCHours();
+  const nextBoundary = Math.ceil((utcHour + 1) / 4) * 4;
+  const target = new Date(now);
+  target.setUTCHours(nextBoundary, 0, 0, 0);
+  if (target <= now) target.setUTCDate(target.getUTCDate() + 1);
+  return target.getTime() - now.getTime();
+}
+
+function timeToNext1dCandle() {
+  // Las velas 1D cierran a las 00:00 UTC
+  const now = new Date();
+  const target = new Date(now);
+  target.setUTCHours(24, 0, 0, 0);
+  return target.getTime() - now.getTime();
+}
+
+function formatTimeRemaining(ms) {
+  if (ms < 0) ms = 0;
+  const total = Math.floor(ms / 1000);
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  if (h > 0) return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+  return `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+}
+
+function updateCandleTimers() {
+  const t4h = timeToNext4hCandle();
+  const t1d = timeToNext1dCandle();
+  const el4 = document.getElementById('candle-4h');
+  const el1 = document.getElementById('candle-1d');
+  if (el4) {
+    el4.textContent = formatTimeRemaining(t4h);
+    // Resaltar cuando faltan menos de 15 min para el cierre de 4H
+    el4.style.color = t4h < 15 * 60 * 1000 ? 'var(--red)' :
+                      t4h < 60 * 60 * 1000 ? 'var(--amber)' : 'var(--blue)';
+  }
+  if (el1) {
+    el1.textContent = formatTimeRemaining(t1d);
+    el1.style.color = t1d < 30 * 60 * 1000 ? 'var(--red)' :
+                      t1d < 2 * 60 * 60 * 1000 ? 'var(--amber)' : 'var(--text-mid)';
+  }
+}
+
+// Iniciar timer global (se mantiene activo siempre)
+setInterval(updateCandleTimers, 1000);
+updateCandleTimers();
+
+
+let running = false;
+let cntdwnTimer = null;
+let cntdwn = COUNTDOWN_TOTAL;
+let allData = [];
+let prevVolumes = {};
+let alertedSet = new Set();
+let btcTrend = { change: 0, falling: false };
+let mode = 'strict';
+
+const LS_TRADES = 'sscanner_trades_v8';
+const LS_WEIGHTS = 'sscanner_weights_v8';
+const LS_MODE = 'sscanner_mode_v8';
+const LS_TG_TOKEN = 'sscanner_tg_token';
+const LS_TG_CHATID = 'sscanner_tg_chatid';
+const LS_TG_NEAR = 'sscanner_tg_near';
+// Compat: migrar datos de versiones previas
+const LS_LEGACY = ['v7','v6','v5','v4'];
+
+let WEIGHTS = { pump:15, funding:20, rsi:10, divergence:20, redCandles:25, btcOk:5, liquidity:5 };
+let trades = [];
+
+loadFromStorage();
+
+const fmt = v => {
+  if (v >= 1e9) return (v/1e9).toFixed(2)+'B';
+  if (v >= 1e6) return (v/1e6).toFixed(2)+'M';
+  if (v >= 1e3) return (v/1e3).toFixed(1)+'K';
+  return v.toFixed(0);
+};
+const fmtP = p => {
+  if (p < 0.0001) return p.toExponential(3);
+  if (p < 0.01) return p.toFixed(6);
+  if (p < 1) return p.toFixed(4);
+  if (p < 100) return p.toFixed(3);
+  return p.toFixed(2);
+};
+const now = () => new Date().toLocaleTimeString('es',{hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false});
+
+function beep() {
+  try {
+    const ctx = new (window.AudioContext||window.webkitAudioContext)();
+    [[660,0,0.1],[880,0.12,0.1]].forEach(([f,t,d]) => {
+      const o = ctx.createOscillator(), g = ctx.createGain();
+      o.connect(g); g.connect(ctx.destination);
+      o.frequency.value = f; o.type = 'sine';
+      g.gain.setValueAtTime(0.1, ctx.currentTime+t);
+      g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime+t+d);
+      o.start(ctx.currentTime+t); o.stop(ctx.currentTime+t+d);
+    });
+  } catch(e){}
+}
+
+function isValidSymbol(sym) {
+  return /^[A-Z0-9]{2,15}$/.test(sym);
+}
+
+async function fetchWithTimeout(url, timeoutMs = 8000) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const r = await fetch(url, { signal: ctrl.signal });
+    clearTimeout(timer);
+    return r;
+  } catch(e) {
+    clearTimeout(timer);
+    throw e;
+  }
+}
+
+async function fetch24hr() {
+  const r = await fetchWithTimeout('https://api.binance.com/api/v3/ticker/24hr', 12000);
+  if (!r.ok) throw new Error('24hr HTTP ' + r.status);
+  return r.json();
+}
+async function fetchKlines(symbol, interval='4h', limit=50) {
+  try {
+    const r = await fetchWithTimeout(`https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`, 8000);
+    if (!r.ok) return null;
+    return r.json();
+  } catch { return null; }
+}
+async function fetchFundingRate(symbol) {
+  try {
+    const r = await fetchWithTimeout(`https://fapi.binance.com/fapi/v1/premiumIndex?symbol=${symbol}`, 6000);
+    if (!r.ok) return null;
+    const d = await r.json();
+    if (d.lastFundingRate === undefined) return null;
+    return parseFloat(d.lastFundingRate) * 100;
+  } catch { return null; }
+}
+
+function calcRSI(klines, period = 14) {
+  if (!klines || klines.length < period + 1) return null;
+  const closes = klines.map(k => parseFloat(k[4]));
+  let gains = 0, losses = 0;
+  for (let i = 1; i <= period; i++) {
+    const diff = closes[i] - closes[i-1];
+    if (diff >= 0) gains += diff; else losses -= diff;
+  }
+  let avgG = gains / period, avgL = losses / period;
+  for (let i = period + 1; i < closes.length; i++) {
+    const diff = closes[i] - closes[i-1];
+    const g = diff > 0 ? diff : 0;
+    const l = diff < 0 ? -diff : 0;
+    avgG = (avgG * (period - 1) + g) / period;
+    avgL = (avgL * (period - 1) + l) / period;
+  }
+  if (avgL === 0) return 100;
+  return 100 - (100 / (1 + avgG / avgL));
+}
+
+// Calcula RSI para CADA vela (serie completa) — necesario para divergencias
+function calcRSISeries(klines, period = 14) {
+  if (!klines || klines.length < period + 1) return [];
+  const closes = klines.map(k => parseFloat(k[4]));
+  const rsis = new Array(period).fill(null); // sin RSI para las primeras `period` velas
+  let gains = 0, losses = 0;
+  for (let i = 1; i <= period; i++) {
+    const diff = closes[i] - closes[i-1];
+    if (diff >= 0) gains += diff; else losses -= diff;
+  }
+  let avgG = gains / period, avgL = losses / period;
+  rsis.push(avgL === 0 ? 100 : 100 - (100 / (1 + avgG / avgL)));
+  for (let i = period + 1; i < closes.length; i++) {
+    const diff = closes[i] - closes[i-1];
+    const g = diff > 0 ? diff : 0;
+    const l = diff < 0 ? -diff : 0;
+    avgG = (avgG * (period - 1) + g) / period;
+    avgL = (avgL * (period - 1) + l) / period;
+    rsis.push(avgL === 0 ? 100 : 100 - (100 / (1 + avgG / avgL)));
+  }
+  return rsis;
+}
+
+// Encuentra picos significativos en una serie usando un algoritmo de "swing high":
+// un swing high es un punto que es más alto que los `window` puntos a cada lado
+// Deduplica picos consecutivos con el mismo valor
+function findSwingHighs(series, window = 2, minDropPct = 0.005) {
+  const peaks = [];
+  for (let i = window; i < series.length - window; i++) {
+    if (series[i] === null || series[i] === undefined) continue;
+    let leftOk = true;
+    for (let j = 1; j <= window; j++) {
+      if (series[i-j] === null || series[i-j] === undefined) { leftOk = false; break; }
+      if (series[i-j] > series[i]) { leftOk = false; break; }
+    }
+    if (!leftOk) continue;
+    let rightOk = true;
+    for (let j = 1; j <= window; j++) {
+      if (series[i+j] === null || series[i+j] === undefined) { rightOk = false; break; }
+      if (series[i+j] > series[i]) { rightOk = false; break; }
+    }
+    if (!rightOk) continue;
+    peaks.push({ idx: i, value: series[i] });
+  }
+  // Deduplicar picos consecutivos con el mismo valor (mantener el último)
+  const deduped = [];
+  for (let i = 0; i < peaks.length; i++) {
+    if (i + 1 < peaks.length &&
+        peaks[i].value === peaks[i+1].value &&
+        peaks[i+1].idx - peaks[i].idx <= 3) {
+      continue; // skip, mantenemos el siguiente
+    }
+    deduped.push(peaks[i]);
+  }
+  return deduped;
+}
+
+// Mantener findPeaks como wrapper retrocompatible
+function findPeaks(series, window = 2) {
+  return findSwingHighs(series, window, 0);
+}
+
+// Detecta divergencia bajista en las últimas N velas
+// Devuelve: { found: bool, strength: 0-1, pricePeaks, rsiPeaks }
+function detectBearishDivergence(klines, lookback = 30) {
+  if (!klines || klines.length < lookback + 15) return { found: false, strength: 0 };
+
+  // Calcular RSI series sobre todo el conjunto
+  const rsiSeries = calcRSISeries(klines, 14);
+
+  // Tomar los últimos N (lookback) y trabajar sobre ese rango
+  const startIdx = klines.length - lookback;
+  const recentHighs = klines.slice(startIdx).map(k => parseFloat(k[2]));
+  const recentRsi = rsiSeries.slice(startIdx);
+
+  // Buscar swing highs en precio y RSI
+  const pricePeaks = findSwingHighs(recentHighs, 2, 0.01); // mínimo 1% de caída entre swing y vecinos
+  const rsiPeaks = findSwingHighs(recentRsi, 2, 0);
+
+  if (pricePeaks.length < 2 || rsiPeaks.length < 2) return { found: false, strength: 0, debug:'no enough peaks' };
+
+  // Tomar los 2 picos más recientes de precio
+  const p2 = pricePeaks[pricePeaks.length - 1];
+  const p1 = pricePeaks[pricePeaks.length - 2];
+
+  // El pico de precio reciente debe estar relativamente cerca del final
+  if (recentHighs.length - 1 - p2.idx > 10) return { found: false, strength: 0, debug:'last peak too far' };
+
+  // Encontrar los picos de RSI más cercanos a los picos de precio (tolerancia ±3 velas)
+  function nearestPeak(peaks, targetIdx) {
+    let best = null, minDist = Infinity;
+    for (const p of peaks) {
+      const dist = Math.abs(p.idx - targetIdx);
+      if (dist < minDist && dist <= 3) {
+        minDist = dist;
+        best = p;
+      }
+    }
+    return best;
+  }
+  const r2 = nearestPeak(rsiPeaks, p2.idx);
+  const r1 = nearestPeak(rsiPeaks, p1.idx);
+
+  if (!r1 || !r2) return { found: false, strength: 0, debug:'no matching rsi peaks' };
+
+  // CONDICIÓN DE DIVERGENCIA BAJISTA:
+  const priceUp = p2.value > p1.value;
+  const rsiDown = r2.value < r1.value;
+
+  if (!priceUp || !rsiDown) return { found: false, strength: 0, debug:'not diverging' };
+
+  // Fuerza:
+  const priceRise = (p2.value - p1.value) / p1.value;
+  const rsiDrop = r1.value - r2.value;
+  const rsiHigh = Math.min(r1.value, r2.value);
+
+  let strength = 0;
+  if (rsiHigh >= 70) strength += 0.4;
+  else if (rsiHigh >= 60) strength += 0.2;
+  if (rsiDrop >= 5) strength += 0.3;
+  else if (rsiDrop >= 2) strength += 0.15;
+  if (priceRise >= 0.05) strength += 0.3;
+  else if (priceRise >= 0.02) strength += 0.15;
+
+  return {
+    found: true,
+    strength: Math.min(1, strength),
+    p1: p1.value, p2: p2.value,
+    r1: r1.value, r2: r2.value,
+    rsiDrop, priceRise
+  };
+}
+
+function lastCandlesColors(klines, n = CANDLES_TO_SHOW) {
+  if (!klines || klines.length < n) return [];
+  return klines.slice(-n).map(k => {
+    const o = parseFloat(k[1]), c = parseFloat(k[4]);
+    return c < o ? 'red' : c > o ? 'green' : 'neutral';
+  });
+}
+// Cuenta velas rojas consecutivas al final, EXCLUYENDO la vela en curso (la última si aún no cerró)
+function countLastRedCandles(klines) {
+  if (!klines || klines.length < 2) return 0;
+  // Excluir vela en curso: si closeTime > now, la última está abierta
+  const nowMs = Date.now();
+  let lastIdx = klines.length - 1;
+  const lastCloseTime = parseInt(klines[lastIdx][6]);
+  if (lastCloseTime > nowMs) lastIdx--; // la última está en curso, ignorar
+
+  let count = 0;
+  for (let i = lastIdx; i >= 0; i--) {
+    const open = parseFloat(klines[i][1]);
+    const close = parseFloat(klines[i][4]);
+    if (close < open) count++;
+    else break;
+  }
+  return count;
+}
+
+function gradePump(change, threshold) {
+  const max = WEIGHTS.pump;
+  if (change <= 0) return { points:0, state:'fail', passed:false };
+  if (change >= threshold) return { points:max, state:'ok', passed:true };
+  const ratio = change / threshold;
+  return { points: Math.round(max * ratio), state: ratio >= 0.7 ? 'near' : 'fail', passed:false };
+}
+function gradeFunding(fr) {
+  const max = WEIGHTS.funding;
+  if (fr === null) {
+    return { points: Math.round(max * 0.5), state:'near', passed:false, neutral:true };
+  }
+  if (fr >= 0.05) return { points:max, state:'ok', passed:true };
+  if (fr >= 0.02) {
+    const ratio = (fr - 0.02) / 0.03;
+    return { points: Math.round(max * (0.6 + 0.4 * ratio)), state:'near', passed:false };
+  }
+  if (fr > 0) {
+    const ratio = fr / 0.02;
+    return { points: Math.round(max * (0.2 + 0.4 * ratio)), state:'fail', passed:false };
+  }
+  return { points:0, state:'fail', passed:false };
+}
+function gradeRSI(rsi, threshold = 80) {
+  const max = WEIGHTS.rsi;
+  if (rsi === null) return { points:0, state:'fail', passed:false };
+  if (rsi >= threshold) return { points:max, state:'ok', passed:true };
+  if (rsi >= 70) {
+    const ratio = (rsi - 70) / (threshold - 70);
+    return { points: Math.round(max * (0.6 + 0.4 * ratio)), state:'near', passed:false };
+  }
+  if (rsi >= 60) {
+    const ratio = (rsi - 60) / 10;
+    return { points: Math.round(max * (0.2 + 0.4 * ratio)), state:'fail', passed:false };
+  }
+  return { points:0, state:'fail', passed:false };
+}
+function gradeRedCandles(redCount, candleColors) {
+  const max = WEIGHTS.redCandles;
+  // Requiere 2+ velas rojas CONSECUTIVAS Y CERRADAS para passar como GO SHORT
+  if (redCount >= 2) return { points:max, state:'ok', passed:true };
+  // 1 vela roja cerrada: aún no suficiente, pero da puntos parciales y marca como "near"
+  if (redCount === 1) return { points: Math.round(max * 0.4), state:'near', passed:false };
+  // Hay alguna roja en las últimas 5 velas pero no al final
+  if (candleColors.includes('red')) return { points: Math.round(max * 0.15), state:'near', passed:false };
+  return { points:0, state:'fail', passed:false };
+}
+function gradeBtcOk(btcChange) {
+  const max = WEIGHTS.btcOk;
+  if (btcChange >= 0) return { points:max, state:'ok', passed:true };
+  if (btcChange >= -2) {
+    const ratio = (btcChange + 2) / 2;
+    return { points: Math.round(max * (0.4 + 0.6 * ratio)), state:'near', passed:true };
+  }
+  return { points:0, state:'fail', passed:false };
+}
+function gradeLiquidity(vol) {
+  const max = WEIGHTS.liquidity;
+  if (vol >= 1e7) return { points:max, state:'ok', passed:true };
+  if (vol >= 5e6) return { points: Math.round(max * 0.7), state:'near', passed:false };
+  if (vol >= 1e6) return { points: Math.round(max * 0.3), state:'fail', passed:false };
+  return { points:0, state:'fail', passed:false };
+}
+
+function gradeDivergence(div) {
+  const max = WEIGHTS.divergence;
+  if (!div || !div.found) return { points:0, state:'fail', passed:false };
+  // strength 0-1 → puntos proporcionales
+  // passed solo si strength >= 0.5 (divergencia clara, no marginal)
+  const points = Math.round(max * div.strength);
+  const passed = div.strength >= 0.5;
+  return {
+    points,
+    state: passed ? 'ok' : (div.strength >= 0.3 ? 'near' : 'fail'),
+    passed
+  };
+}
+
+function calcScore(d, thChg) {
+  const rsiTh = mode === 'flex' ? 75 : 80;
+  const grades = {
+    pump: gradePump(d.change, thChg),
+    funding: gradeFunding(d.fundingRate),
+    rsi: gradeRSI(d.rsi, rsiTh),
+    divergence: gradeDivergence(d.divergence),
+    redCandles: gradeRedCandles(d.redCount, d.candleColors),
+    btcOk: gradeBtcOk(btcTrend.change),
+    liquidity: gradeLiquidity(d.vol)
+  };
+  let earned = 0, total = 0;
+  for (const k in WEIGHTS) {
+    total += WEIGHTS[k];
+    earned += grades[k].points;
+  }
+  const score = Math.round((earned / total) * 100);
+  const passedCount = Object.values(grades).filter(g => g.passed).length;
+  const checks = {};
+  for (const k in grades) checks[k] = grades[k].passed;
+  return { score, checks, grades, passedCount };
+}
+
+function getVerdict(s, d, thChg) {
+  const c = s.checks;
+  if (mode === 'strict') {
+    if (c.pump && c.redCandles && (c.funding || c.rsi) && c.btcOk) return { txt:'GO SHORT', cls:'go' };
+    if (c.pump && (c.funding || c.rsi) && !c.redCandles && c.btcOk) return { txt:'CERCA', cls:'near' };
+    if (c.pump && c.btcOk) return { txt:'VIGILAR', cls:'watch' };
+    if (c.pump && !c.btcOk) return { txt:'BTC ↓', cls:'btc' };
+    return { txt:'—', cls:'no' };
+  } else {
+    const techConfluence = c.redCandles && c.funding && c.rsi;
+    const halfPump = d.change >= thChg * 0.5;
+    if ((c.pump || (halfPump && techConfluence)) && c.redCandles && (c.funding || c.rsi) && c.btcOk) return { txt:'GO SHORT', cls:'go' };
+    if (techConfluence && c.btcOk) return { txt:'GO SHORT', cls:'go' };
+    if ((c.pump || halfPump) && (c.funding || c.rsi) && c.btcOk) return { txt:'CERCA', cls:'near' };
+    if (c.pump || (halfPump && (c.funding || c.rsi))) return { txt:'VIGILAR', cls:'watch' };
+    if (c.pump && !c.btcOk) return { txt:'BTC ↓', cls:'btc' };
+    return { txt:'—', cls:'no' };
+  }
+}
+
+// Batch helper — procesa N en paralelo, espera, sigue con los siguientes
+async function batchedMap(items, fn, batchSize = 10) {
+  const results = [];
+  for (let i = 0; i < items.length; i += batchSize) {
+    const batch = items.slice(i, i + batchSize);
+    const batchResults = await Promise.all(batch.map(fn));
+    results.push(...batchResults);
+  }
+  return results;
+}
+
+let lastFetchTs = 0;
+let isFetching = false;
+const MIN_FETCH_INTERVAL_MS = 5000;
+
+async function fetchNow() {
+  // Protección contra fetches concurrentes
+  if (isFetching) {
+    setStatus('ya en curso...');
+    return;
+  }
+  const sinceLast = Date.now() - lastFetchTs;
+  if (sinceLast < MIN_FETCH_INTERVAL_MS) {
+    setStatus(`espera ${Math.ceil((MIN_FETCH_INTERVAL_MS - sinceLast)/1000)}s`);
+    return;
+  }
+  lastFetchTs = Date.now();
+  isFetching = true;
+
+  try {
+    await doFetch();
+  } finally {
+    isFetching = false;
+  }
+}
+
+async function doFetch() {
+
+  setLed('warn');
+  setStatus('cargando...');
+
+  const topN = parseInt(document.getElementById('cfg-top').value) || 30;
+  const thChg = parseFloat(document.getElementById('cfg-change').value) || 80;
+  const thVolMin = parseFloat(document.getElementById('cfg-volmin').value) || 1e6;
+
+  let raw = [];
+  try { raw = await fetch24hr(); }
+  catch(e) { setLed('err'); setStatus('error'); return; }
+
+  const btcData = raw.find(d => d.symbol === 'BTCUSDT');
+  if (btcData) {
+    btcTrend.change = parseFloat(btcData.priceChangePercent);
+    btcTrend.falling = btcTrend.change <= -2;
+    const el = document.getElementById('btc-status');
+    el.textContent = `${btcTrend.change >= 0 ? '+' : ''}${btcTrend.change.toFixed(2)}%`;
+    el.style.color = btcTrend.falling ? 'var(--red)' : btcTrend.change < 0 ? 'var(--amber)' : 'var(--green)';
+  }
+
+  let pairs = raw.filter(d => {
+    if (!d.symbol.endsWith('USDT')) return false;
+    const sym = d.symbol.replace('USDT','');
+    if (STABLE.has(sym)) return false;
+    if (!isValidSymbol(sym)) return false;
+    if (parseFloat(d.quoteVolume) < thVolMin) return false;
+    return true;
+  });
+  pairs.sort((a,b) => parseFloat(b.priceChangePercent) - parseFloat(a.priceChangePercent));
+  pairs = pairs.slice(0, topN);
+
+  setStatus(`analizando ${pairs.length}`);
+
+  const enriched = await batchedMap(pairs, async (d) => {
+    const sym = d.symbol.replace('USDT','');
+    const symbol = d.symbol;
+    const price = parseFloat(d.lastPrice);
+    const change = parseFloat(d.priceChangePercent);
+    const vol = parseFloat(d.quoteVolume);
+    const prev = prevVolumes[sym] || vol;
+    const spike = prev > 0 ? vol / prev : 1;
+    prevVolumes[sym] = vol;
+
+    const [klines, fr] = await Promise.all([
+      fetchKlines(symbol, '4h', 50),
+      fetchFundingRate(symbol)
+    ]);
+
+    return {
+      sym, symbol, price, change, vol, spike,
+      fundingRate: fr,
+      rsi: calcRSI(klines, 14),
+      divergence: detectBearishDivergence(klines, 30),
+      candleColors: lastCandlesColors(klines, CANDLES_TO_SHOW),
+      redCount: countLastRedCandles(klines),
+      ts: Date.now()
+    };
+  }, 10);
+
+  allData = enriched;
+  allData.forEach(d => {
+    const s = calcScore(d, thChg);
+    d.score = s.score;
+    d.checks = s.checks;
+    d.grades = s.grades;
+    d.passedCount = s.passedCount;
+    d.verdict = getVerdict(s, d, thChg);
+  });
+
+  let newAlerts = 0;
+  const newGoSet = new Set();
+  // Limpiar entries antiguas (más de 8h) para que el Set no crezca infinito
+  if (alertedSet.size > 500) {
+    const current4hBlock = Math.floor(Date.now() / (4*3600*1000));
+    const filtered = new Set();
+    alertedSet.forEach(id => {
+      const block = parseInt(id.split('_').pop());
+      if (!isNaN(block) && current4hBlock - block <= 2) filtered.add(id);
+    });
+    alertedSet = filtered;
+  }
+
+  // Detectar NUEVAS alertas (para beep/notification — Telegram tiene su propio control de cooldown)
+  allData.forEach(d => {
+    const id = d.sym + '_' + Math.floor(Date.now() / (4*3600*1000));
+    if (d.verdict.cls === 'go' && !alertedSet.has(id)) {
+      alertedSet.add(id);
+      newAlerts++;
+      newGoSet.add(d.sym);
+      sendShortAlert(d);
+    } else if (d.verdict.cls === 'near' && !alertedSet.has(id + '_n')) {
+      alertedSet.add(id + '_n');
+      sendShortAlert(d);
+    }
+  });
+
+  // RECONSTRUIR el log con TODAS las alertas activas en este momento
+  rebuildAlertLog();
+
+  if (newAlerts > 0) beep();
+
+  renderTable(thChg, newGoSet);
+  updateStats();
+
+  document.getElementById('last-update').textContent = `act. ${now()}`;
+  if (running) { setLed('on'); setStatus('activo'); }
+  else { setLed('on'); setStatus('manual'); }
+
+  if (newAlerts > 0 && Notification.permission === 'granted') {
+    const top = allData.find(d => d.verdict.cls === 'go');
+    if (top) new Notification(`${newAlerts} señal${newAlerts>1?'es':''} de SHORT`, {
+      body: `${top.sym}: +${top.change.toFixed(2)}% · Score ${top.score}`
+    });
+  }
+}
+
+function renderTable(thChg, newGoSet = new Set()) {
+  const tbody = document.getElementById('tbody');
+  if (!allData.length) {
+    tbody.innerHTML = '<tr><td colspan="11" class="log-empty">Sin datos</td></tr>';
+    return;
+  }
+  const sorted = [...allData].sort((a, b) => {
+    if (b.score !== a.score) return b.score - a.score;
+    if (b.passedCount !== a.passedCount) return b.passedCount - a.passedCount;
+    return b.change - a.change;
+  });
+
+  tbody.innerHTML = sorted.map((d, i) => {
+    const sColor = d.score >= 75 ? 'var(--red)' :
+                   d.score >= 55 ? 'var(--amber)' :
+                   d.score >= 35 ? 'var(--blue)' : 'var(--text-dim)';
+    const candles = d.candleColors.map(c => `<div class="candle ${c}"></div>`).join('');
+    const frTxt = d.fundingRate === null
+      ? '<span style="color:var(--text-dim)">—</span>'
+      : `<span style="color:${d.fundingRate >= 0.05 ? 'var(--red)' : d.fundingRate > 0 ? 'var(--amber)' : 'var(--green)'}">${d.fundingRate >= 0 ? '+' : ''}${d.fundingRate.toFixed(3)}</span>`;
+    const rsiTxt = d.rsi === null
+      ? '<span style="color:var(--text-dim)">—</span>'
+      : `<span style="color:${d.rsi >= 80 ? 'var(--red)' : d.rsi >= 70 ? 'var(--amber)' : 'var(--text)'}">${d.rsi.toFixed(0)}</span>`;
+    const condOrder = ['pump','funding','rsi','divergence','redCandles','btcOk','liquidity'];
+    const condDots = condOrder.map(k => {
+      const g = d.grades[k];
+      return `<div class="cond-dot ${g.state}" title="${k}: ${g.points}/${WEIGHTS[k]}"></div>`;
+    }).join('');
+    const rowCls = ['row-' + d.verdict.cls];
+    if (newGoSet.has(d.sym)) rowCls.push('new-alert');
+
+    return `<tr class="${rowCls.join(' ')}" onclick="toggleDetail('${d.sym}')">
+      <td class="t-rank">${i+1}</td>
+      <td><span class="t-sym">${d.sym}</span><span class="t-pair">/USDT</span></td>
+      <td class="right">$${fmtP(d.price)}</td>
+      <td class="right ${d.change>=0?'ch-up':'ch-dn'}">${d.change>=0?'+':''}${d.change.toFixed(2)}%</td>
+      <td class="right">${fmt(d.vol)}</td>
+      <td class="right">${frTxt}</td>
+      <td class="right">${rsiTxt}</td>
+      <td><div class="candles">${candles}</div></td>
+      <td><div class="conds-mini">${condDots}</div></td>
+      <td><div class="score-cell"><div class="score-bar"><div class="score-fill" style="width:${d.score}%;background:${sColor}"></div></div><span class="score-num" style="color:${sColor}">${d.score}</span></div></td>
+      <td><span class="pill pill-${d.verdict.cls}">${d.verdict.txt}</span></td>
+    </tr>
+    <tr id="detail-${d.sym}" class="detail-row" style="display:none">
+      <td colspan="11">
+        <div class="detail-grid">
+          ${renderCheckDetail('Pump >' + thChg + '%', d.grades.pump, d.change.toFixed(2) + '%', WEIGHTS.pump)}
+          ${renderCheckDetail('Funding >0.05%', d.grades.funding, d.fundingRate === null ? 'sin futuros' : d.fundingRate.toFixed(3) + '%', WEIGHTS.funding)}
+          ${renderCheckDetail('RSI 4h >' + (mode==='flex'?75:80), d.grades.rsi, d.rsi === null ? '—' : d.rsi.toFixed(0), WEIGHTS.rsi)}
+          ${renderCheckDetail('Divergencia bajista', d.grades.divergence, d.divergence?.found ? `fuerza ${(d.divergence.strength*100).toFixed(0)}%` : 'no detectada', WEIGHTS.divergence)}
+          ${renderCheckDetail('Velas rojas', d.grades.redCandles, d.redCount + ' rojas', WEIGHTS.redCandles)}
+          ${renderCheckDetail('BTC trend', d.grades.btcOk, 'BTC ' + (btcTrend.change>=0?'+':'') + btcTrend.change.toFixed(2) + '%', WEIGHTS.btcOk)}
+          ${renderCheckDetail('Liquidez', d.grades.liquidity, fmt(d.vol), WEIGHTS.liquidity)}
+        </div>
+        <div class="history-panel" id="hist-${d.sym}">
+          <div class="history-head">
+            <div class="history-title">Rendimiento histórico</div>
+            <div class="history-loading"><span class="spin"></span> Cargando datos diarios...</div>
+          </div>
+        </div>
+        <div class="detail-actions">
+          <button class="btn btn-sm" onclick="event.stopPropagation();registerTrade('${d.sym}')">+ Registrar trade</button>
+        </div>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+function renderCheckDetail(label, grade, valueText, maxPoints) {
+  const iconCls = grade.state === 'ok' ? 'ok' : grade.state === 'near' ? 'warn' : 'dim';
+  const icon = grade.state === 'ok' ? '✓' : grade.state === 'near' ? '◐' : '○';
+  return `<div class="check">
+    <div class="check-lbl">${label}</div>
+    <div class="check-val ${iconCls}">${icon} ${valueText}<span class="check-pts">${grade.points}/${maxPoints}</span></div>
+  </div>`;
+}
+
+function toggleDetail(sym) {
+  const r = document.getElementById('detail-' + sym);
+  if (!r) return;
+  const isOpen = r.style.display !== 'none';
+  r.style.display = isOpen ? 'none' : '';
+  if (!isOpen) loadHistory(sym);
+}
+
+// ════ HISTORIAL Y SPARKLINE ════
+const historyCache = {};
+
+async function loadHistory(sym) {
+  const panel = document.getElementById('hist-' + sym);
+  if (!panel) return;
+
+  // Use cache if available (15 min validity)
+  const cached = historyCache[sym];
+  if (cached && (Date.now() - cached.ts) < 15 * 60 * 1000) {
+    renderHistory(sym, cached.data);
+    return;
+  }
+
+  try {
+    // Fetch 9 daily candles para asegurar suficiente historial
+    const klines = await fetchKlines(sym + 'USDT', '1d', 9);
+    if (!klines || klines.length < 4) {
+      panel.innerHTML = `
+        <div class="history-head">
+          <div class="history-title">Rendimiento histórico</div>
+          <div style="font-size:11px;color:var(--text-dim)">Sin datos suficientes</div>
+        </div>`;
+      return;
+    }
+
+    // Detectar si la última vela es del día en curso (aún abierta).
+    // closeTime [k[6]] > ahora => en curso
+    const nowMs = Date.now();
+    const lastCandle = klines[klines.length - 1];
+    const lastCloseTime = parseInt(lastCandle[6]);
+    const lastIsOpen = lastCloseTime > nowMs;
+    const completed = lastIsOpen ? klines.slice(0, -1) : klines.slice();
+
+    if (completed.length < 3) {
+      panel.innerHTML = `
+        <div class="history-head">
+          <div class="history-title">Rendimiento histórico</div>
+          <div style="font-size:11px;color:var(--text-dim)">Token muy reciente, sin 3 días completos</div>
+        </div>`;
+      return;
+    }
+
+    // Últimos 3 días cerrados
+    const last3 = completed.slice(-3).map(k => {
+      const open = parseFloat(k[1]);
+      const close = parseFloat(k[4]);
+      const high = parseFloat(k[2]);
+      const low = parseFloat(k[3]);
+      return {
+        open, close, high, low,
+        change: ((close - open) / open) * 100,
+        date: new Date(parseInt(k[0]))
+      };
+    });
+
+    // Acum 3d: open del día -3 a close de ayer
+    const acc3 = ((last3[2].close - last3[0].open) / last3[0].open) * 100;
+
+    // Acum 7d: necesitamos al menos 7 días cerrados
+    const last7 = completed.slice(-7);
+    const acc7 = last7.length >= 7
+      ? ((last7[last7.length - 1].close - last7[0].open) / last7[0].open) * 100
+      : null;
+
+    // Sparkline con TODOS los closes disponibles (incluido el día en curso si existe)
+    const sparkData = klines.map(k => parseFloat(k[4]));
+
+    const data = { last3, acc3, acc7, sparkData, lastIsOpen };
+    historyCache[sym] = { ts: Date.now(), data };
+
+    // Cleanup: si hay más de 50 entries, eliminar las más antiguas
+    const keys = Object.keys(historyCache);
+    if (keys.length > 50) {
+      const sorted = keys.sort((a, b) => historyCache[a].ts - historyCache[b].ts);
+      const toRemove = sorted.slice(0, keys.length - 50);
+      toRemove.forEach(k => delete historyCache[k]);
+    }
+
+    renderHistory(sym, data);
+  } catch(e) {
+    panel.innerHTML = `
+      <div class="history-head">
+        <div class="history-title">Rendimiento histórico</div>
+        <div style="font-size:11px;color:var(--red)">Error cargando datos</div>
+      </div>`;
+  }
+}
+
+function renderHistory(sym, data) {
+  const panel = document.getElementById('hist-' + sym);
+  if (!panel) return;
+
+  const { last3, acc3, acc7, sparkData } = data;
+
+  // Max abs change for bar scaling
+  const maxAbs = Math.max(5, ...last3.map(d => Math.abs(d.change)));
+
+  const dayNames = ['Hace 3 días', 'Hace 2 días', 'Ayer'];
+  const daysHtml = last3.map((d, i) => {
+    const cls = d.change >= 0 ? 'up' : 'dn';
+    const width = (Math.abs(d.change) / maxAbs) * 50;
+    return `<div class="hist-day">
+      <div class="hist-day-lbl">${dayNames[i] || 'Día'}</div>
+      <div class="hist-day-val ${cls}">${d.change >= 0 ? '+' : ''}${d.change.toFixed(2)}%</div>
+      <div class="hist-bar-wrap">
+        <div class="hist-zero"></div>
+        <div class="hist-bar ${cls}" style="width:${width}%"></div>
+      </div>
+    </div>`;
+  }).join('');
+
+  const accColor = c => c >= 0 ? 'var(--green)' : 'var(--red)';
+  const summary = `
+    <div class="hist-summary">
+      <div class="hist-sum-item">
+        <span class="hist-sum-lbl">Acum. 3d</span>
+        <span class="hist-sum-val" style="color:${accColor(acc3)}">${acc3 >= 0 ? '+' : ''}${acc3.toFixed(2)}%</span>
+      </div>
+      <div class="hist-sum-item">
+        <span class="hist-sum-lbl">Acum. 7d</span>
+        <span class="hist-sum-val" style="color:${acc7 === null ? 'var(--text-dim)' : accColor(acc7)}">${acc7 === null ? '—' : (acc7 >= 0 ? '+' : '') + acc7.toFixed(2) + '%'}</span>
+      </div>
+    </div>`;
+
+  // Overextended warning
+  let warning = '';
+  if (acc7 !== null && acc7 > 150) {
+    warning = `<div class="overextended-warning">⚠ Sobreextendido: ${acc7.toFixed(0)}% en 7 días. El agotamiento del rally es probable.</div>`;
+  } else if (acc3 > 100) {
+    warning = `<div class="overextended-warning">⚠ Sobreextendido: ${acc3.toFixed(0)}% en 3 días. Momentum muy estirado.</div>`;
+  }
+
+  // Sparkline
+  const spark = renderSparkline(sparkData);
+
+  panel.innerHTML = `
+    <div class="history-head">
+      <div class="history-title">Rendimiento histórico</div>
+    </div>
+    <div class="history-grid">${daysHtml}</div>
+    ${summary}
+    <div class="sparkline-wrap">
+      <div class="sparkline-title">Tendencia del precio (últimos ${sparkData.length} días)</div>
+      ${spark}
+    </div>
+    ${warning}
+  `;
+}
+
+function renderSparkline(values) {
+  if (!values || values.length < 2) return '';
+  const W = 600, H = 60, PAD = 4;
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const range = max - min || 1;
+  const step = (W - PAD * 2) / (values.length - 1);
+  const points = values.map((v, i) => {
+    const x = PAD + i * step;
+    const y = PAD + (1 - (v - min) / range) * (H - PAD * 2);
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(' ');
+
+  const first = values[0], last = values[values.length-1];
+  const isUp = last >= first;
+  const color = isUp ? 'var(--green)' : 'var(--red)';
+
+  // Area fill below the line
+  const areaPoints = `${PAD},${H-PAD} ${points} ${(W-PAD).toFixed(1)},${H-PAD}`;
+
+  return `<svg class="sparkline-svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
+    <polygon points="${areaPoints}" fill="${color}" opacity="0.1"/>
+    <polyline points="${points}" fill="none" stroke="${color}" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/>
+  </svg>`;
+}
+
+function updateStats() {
+  const go = allData.filter(d => d.verdict.cls === 'go').length;
+  const near = allData.filter(d => d.verdict.cls === 'near').length;
+  const watch = allData.filter(d => d.verdict.cls === 'watch').length;
+  const top = allData.reduce((a,b) => b.change > (a?.change ?? -Infinity) ? b : a, null);
+  document.getElementById('st-total').textContent = allData.length;
+  document.getElementById('st-go').textContent = go;
+  document.getElementById('st-near').textContent = near;
+  document.getElementById('st-watch').textContent = watch;
+  document.getElementById('st-top').textContent = top ? `${top.sym} +${top.change.toFixed(1)}%` : '—';
+}
+
+function startCountdown() {
+  clearInterval(cntdwnTimer);
+  cntdwn = COUNTDOWN_TOTAL;
+  cntdwnTimer = setInterval(() => {
+    cntdwn--;
+    const m = String(Math.floor(cntdwn/60)).padStart(2,'0');
+    const s = String(cntdwn%60).padStart(2,'0');
+    document.getElementById('st-countdown').textContent = `${m}:${s}`;
+    document.getElementById('next-txt').textContent = `próx ${m}:${s}`;
+    document.getElementById('prog-fill').style.width = (((COUNTDOWN_TOTAL - cntdwn) / COUNTDOWN_TOTAL) * 100) + '%';
+    if (cntdwn <= 0) { cntdwn = COUNTDOWN_TOTAL; fetchNow(); }
+  }, 1000);
+}
+function toggleMain() {
+  if (running) {
+    running = false;
+    clearInterval(cntdwnTimer);
+    document.getElementById('btn-main').textContent = '▶ Iniciar';
+    setLed(''); setStatus('inactivo');
+    document.getElementById('st-countdown').textContent = '—';
+    document.getElementById('next-txt').textContent = '—';
+    document.getElementById('prog-fill').style.width = '0%';
+  } else {
+    running = true;
+    document.getElementById('btn-main').textContent = '⏸ Detener';
+    if (Notification.permission === 'default') Notification.requestPermission();
+    fetchNow();
+    startCountdown();
+  }
+}
+
+// Map para guardar la hora de primera detección de cada alerta
+const alertFirstSeen = new Map();
+
+function rebuildAlertLog() {
+  const c = document.getElementById('log');
+  if (!c) return;
+
+  // Filtrar tokens en GO SHORT o CERCA, ordenar por prioridad (GO primero)
+  const alerts = allData.filter(d => d.verdict.cls === 'go' || d.verdict.cls === 'near')
+    .sort((a, b) => {
+      if (a.verdict.cls !== b.verdict.cls) return a.verdict.cls === 'go' ? -1 : 1;
+      return b.score - a.score;
+    });
+
+  // Limpiar entries de tokens que ya no están en alerta
+  const currentSet = new Set(alerts.map(d => d.sym + '_' + d.verdict.cls));
+  for (const key of alertFirstSeen.keys()) {
+    if (!currentSet.has(key)) alertFirstSeen.delete(key);
+  }
+
+  if (alerts.length === 0) {
+    c.innerHTML = '<div class="log-empty">En espera de condiciones — las alertas GO SHORT y CERCA aparecerán aquí en cuanto el scanner las detecte</div>';
+    updateLogCount();
+    return;
+  }
+
+  c.innerHTML = alerts.map(d => {
+    const type = d.verdict.cls === 'go' ? 'GO' : 'CERCA';
+    const color = type === 'GO' ? 'var(--red)' : 'var(--amber)';
+    const key = d.sym + '_' + d.verdict.cls;
+    // Si es nueva, registrar hora actual. Si ya existía, usar la previa.
+    if (!alertFirstSeen.has(key)) alertFirstSeen.set(key, new Date());
+    const detected = alertFirstSeen.get(key);
+    const ts = detected.toLocaleTimeString('es', {hour:'2-digit', minute:'2-digit', second:'2-digit', hour12:false});
+    return `<div class="log-row">
+      <span class="log-time">${ts}</span>
+      <span class="log-token" style="color:${color}">${d.sym}</span>
+      <span class="log-msg">
+        <strong style="color:${color}">${type}</strong> · +${d.change.toFixed(2)}% · Score ${d.score} ·
+        FR ${d.fundingRate?.toFixed(3) ?? '—'}% · RSI ${d.rsi?.toFixed(0) ?? '—'} · ${d.redCount} rojas
+      </span>
+      <span style="color:var(--text-mid);font-size:11px">$${fmtP(d.price)}</span>
+    </div>`;
+  }).join('');
+  updateLogCount();
+}
+
+function updateLogCount() {
+  const c = document.getElementById('log');
+  const rows = c ? c.querySelectorAll('.log-row').length : 0;
+  const counter = document.getElementById('log-count');
+  if (counter) {
+    counter.textContent = rows;
+    counter.style.background = rows > 0 ? 'var(--red)' : 'var(--bg-3)';
+    counter.style.color = rows > 0 ? '#fff' : 'var(--text-dim)';
+  }
+}
+function clearLog() {
+  // El log se reconstruye automáticamente, así que "limpiar" significa
+  // forzar el estado vacío hasta el próximo scan
+  document.getElementById('log').innerHTML = '<div class="log-empty">Log limpiado — se reconstruirá en el próximo scan</div>';
+  updateLogCount();
+}
+
+function setMode(m) {
+  mode = m;
+  document.getElementById('mode-strict').classList.toggle('active', m === 'strict');
+  document.getElementById('mode-flex').classList.toggle('active', m === 'flex');
+  // Actualizar badge en el header
+  const badge = document.getElementById('mode-badge');
+  if (badge) {
+    badge.textContent = m === 'flex' ? 'Flexible' : 'Estricto';
+    badge.style.background = m === 'flex' ? 'var(--amber-bg)' : 'var(--bg-3)';
+    badge.style.color = m === 'flex' ? 'var(--amber)' : 'var(--text-hi)';
+    badge.style.borderColor = m === 'flex' ? 'rgba(251,191,36,.4)' : 'var(--line-2)';
+  }
+  localStorage.setItem(LS_MODE, m);
+  if (allData.length) {
+    const thChg = parseFloat(document.getElementById('cfg-change').value) || 80;
+    allData.forEach(d => {
+      const s = calcScore(d, thChg);
+      d.score = s.score; d.checks = s.checks; d.grades = s.grades;
+      d.passedCount = s.passedCount;
+      d.verdict = getVerdict(s, d, thChg);
+    });
+    renderTable(thChg);
+    updateStats();
+    rebuildAlertLog();
+  }
+}
+
+function registerTrade(sym) {
+  const d = allData.find(x => x.sym === sym);
+  if (!d) return;
+  trades.push({
+    id: Date.now(),
+    date: new Date().toISOString(),
+    sym: d.sym, price: d.price, change: d.change,
+    fundingRate: d.fundingRate, rsi: d.rsi, redCount: d.redCount,
+    divergence: d.divergence?.found ? { found: true, strength: d.divergence.strength } : { found: false },
+    score: d.score, checks: d.checks, btcChange: btcTrend.change, mode: mode,
+    result: 'pending'
+  });
+  saveToStorage();
+  renderTradeHistory();
+  showModal('Trade registrado', `${sym} agregado a $${fmtP(d.price)}. Marca el resultado en la pestaña Aprendizaje cuando cierres el trade.`);
+}
+function markTrade(id, result) {
+  const t = trades.find(x => x.id === id);
+  if (!t) return;
+  t.result = result;
+  saveToStorage();
+  recalculateWeights();
+  renderTradeHistory();
+  renderWeights();
+  updateLearningStats();
+}
+function deleteTrade(id) {
+  if (!confirm('¿Eliminar este trade?')) return;
+  trades = trades.filter(x => x.id !== id);
+  saveToStorage();
+  recalculateWeights();
+  renderTradeHistory();
+  renderWeights();
+  updateLearningStats();
+}
+function recalculateWeights() {
+  const completed = trades.filter(t => t.result === 'win' || t.result === 'loss');
+  if (completed.length < 3) return;
+  const stats = {};
+  for (const k in WEIGHTS) stats[k] = { wins: 0, losses: 0, total: 0 };
+  completed.forEach(t => {
+    for (const k in t.checks) {
+      if (t.checks[k]) {
+        stats[k].total++;
+        if (t.result === 'win') stats[k].wins++; else stats[k].losses++;
+      }
+    }
+  });
+  const rates = {};
+  let totalR = 0;
+  for (const k in stats) {
+    rates[k] = stats[k].total >= 2 ? stats[k].wins / stats[k].total : 0.5;
+    totalR += rates[k];
+  }
+  for (const k in WEIGHTS) {
+    WEIGHTS[k] = Math.max(5, Math.round((rates[k] / totalR) * 100));
+  }
+  localStorage.setItem(LS_WEIGHTS, JSON.stringify(WEIGHTS));
+}
+
+function renderTradeHistory() {
+  const tbody = document.getElementById('trade-rows');
+  if (!trades.length) {
+    tbody.innerHTML = '<tr><td colspan="10" class="log-empty">Sin trades registrados</td></tr>';
+    return;
+  }
+  const sorted = [...trades].sort((a,b) => b.id - a.id);
+  tbody.innerHTML = sorted.map(t => {
+    const date = new Date(t.date).toLocaleString('es',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'});
+    const resBadge = t.result === 'win' ? '<span style="color:var(--green)">✓ Ganador</span>' :
+                     t.result === 'loss' ? '<span style="color:var(--red)">✗ Perdedor</span>' :
+                     '<span style="color:var(--amber)">⏳ Pendiente</span>';
+    return `<tr>
+      <td>${date}</td>
+      <td><strong style="color:var(--text-hi)">${t.sym}</strong></td>
+      <td class="right">$${fmtP(t.price)}</td>
+      <td class="right">+${t.change.toFixed(2)}%</td>
+      <td class="right">${t.fundingRate?.toFixed(3) ?? '—'}%</td>
+      <td class="right">${t.rsi?.toFixed(0) ?? '—'}</td>
+      <td>${t.redCount}</td>
+      <td class="right"><strong>${t.score}</strong></td>
+      <td>${resBadge}</td>
+      <td>
+        ${t.result === 'pending' ? `
+          <button class="btn btn-sm btn-green" onclick="markTrade(${t.id},'win')">✓</button>
+          <button class="btn btn-sm btn-danger" onclick="markTrade(${t.id},'loss')">✗</button>
+        ` : ''}
+        <button class="btn btn-sm" onclick="deleteTrade(${t.id})">🗑</button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+function renderWeights() {
+  const container = document.getElementById('weights-container');
+  const completed = trades.filter(t => t.result === 'win' || t.result === 'loss');
+  if (completed.length < 5) {
+    container.innerHTML = `<div class="empty-state">${completed.length} trades completados. Necesitas 5+ para ver patrones.</div>`;
+    return;
+  }
+  const maxW = Math.max(...Object.values(WEIGHTS));
+  const names = {
+    pump: 'Pump alcanzó umbral',
+    funding: 'Funding rate >0.05%',
+    rsi: 'RSI 4h sobrecompra',
+    divergence: 'Divergencia bajista RSI',
+    redCandles: 'Confirmación vela roja',
+    btcOk: 'BTC no cayendo',
+    liquidity: 'Liquidez >10M'
+  };
+  const stats = {};
+  for (const k in WEIGHTS) stats[k] = { wins: 0, losses: 0 };
+  completed.forEach(t => {
+    for (const k in t.checks) {
+      if (t.checks[k]) {
+        if (t.result === 'win') stats[k].wins++; else stats[k].losses++;
+      }
+    }
+  });
+  container.innerHTML = Object.entries(WEIGHTS).sort((a,b) => b[1] - a[1]).map(([k, w]) => {
+    const s = stats[k];
+    const total = s.wins + s.losses;
+    const wr = total > 0 ? Math.round((s.wins / total) * 100) : null;
+    const color = total === 0 ? 'var(--text-dim)' :
+                  wr >= 70 ? 'var(--green)' :
+                  wr >= 50 ? 'var(--amber)' : 'var(--red)';
+    return `<div class="weight-row">
+      <div class="weight-info">
+        <div class="weight-name">${names[k] || k}</div>
+        <div class="weight-stats">${s.wins}A · ${s.losses}P · acierto <span style="color:${color}">${wr === null ? '—' : wr + '%'}</span></div>
+      </div>
+      <div class="weight-bar-wrap"><div class="weight-bar" style="width:${(w/maxW)*100}%;background:${color}"></div></div>
+      <div class="weight-num" style="color:${color}">${w}</div>
+    </div>`;
+  }).join('');
+}
+
+function updateLearningStats() {
+  const completed = trades.filter(t => t.result === 'win' || t.result === 'loss');
+  const wins = trades.filter(t => t.result === 'win').length;
+  const pending = trades.filter(t => t.result === 'pending').length;
+  const wr = completed.length > 0 ? Math.round((wins / completed.length) * 100) : null;
+  document.getElementById('lr-total').textContent = trades.length;
+  document.getElementById('lr-winrate').textContent = wr === null ? '—' : wr + '%';
+  document.getElementById('lr-pending').textContent = pending;
+}
+
+function saveToStorage() {
+  try {
+    localStorage.setItem(LS_TRADES, JSON.stringify(trades));
+    localStorage.setItem(LS_WEIGHTS, JSON.stringify(WEIGHTS));
+  } catch(e) {}
+}
+function loadFromStorage() {
+  try {
+    // Cargar v8 primero; si no existe, intentar versiones anteriores y migrar
+    let t = localStorage.getItem(LS_TRADES);
+    let w = localStorage.getItem(LS_WEIGHTS);
+    let m = localStorage.getItem(LS_MODE);
+    if (!t || !w) {
+      for (const v of LS_LEGACY) {
+        const lt = localStorage.getItem('sscanner_trades_' + v);
+        const lw = localStorage.getItem('sscanner_weights_' + v);
+        if (lt && !t) t = lt;
+        if (lw && !w) w = lw;
+        if (t && w) break;
+      }
+    }
+    if (t) trades = JSON.parse(t);
+    if (w) WEIGHTS = { ...WEIGHTS, ...JSON.parse(w) };
+    if (m) {
+      mode = m;
+      setTimeout(() => {
+        const ms = document.getElementById('mode-strict');
+        const mf = document.getElementById('mode-flex');
+        if (ms) ms.classList.toggle('active', m === 'strict');
+        if (mf) mf.classList.toggle('active', m === 'flex');
+        const badge = document.getElementById('mode-badge');
+        if (badge) {
+          badge.textContent = m === 'flex' ? 'Flexible' : 'Estricto';
+          badge.style.background = m === 'flex' ? 'var(--amber-bg)' : 'var(--bg-3)';
+          badge.style.color = m === 'flex' ? 'var(--amber)' : 'var(--text-hi)';
+          badge.style.borderColor = m === 'flex' ? 'rgba(251,191,36,.4)' : 'var(--line-2)';
+        }
+      }, 0);
+    }
+  } catch(e) {}
+}
+function exportData() {
+  const data = { trades, weights: WEIGHTS, mode, version: 'v21', exportedAt: new Date().toISOString() };
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `short-scanner-${Date.now()}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+function handleImport(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const r = new FileReader();
+  r.onload = (ev) => {
+    try {
+      const data = JSON.parse(ev.target.result);
+      if (data.trades) trades = data.trades;
+      if (data.weights) WEIGHTS = { ...WEIGHTS, ...data.weights };
+      saveToStorage();
+      renderTradeHistory(); renderWeights(); updateLearningStats();
+      showModal('Importado', 'Datos cargados correctamente.');
+    } catch { showModal('Error', 'Archivo inválido.'); }
+  };
+  r.readAsText(file);
+}
+function resetLearning() {
+  if (!confirm('¿Eliminar TODOS los trades y resetear pesos?')) return;
+  trades = [];
+  WEIGHTS = { pump:15, funding:20, rsi:10, divergence:20, redCandles:25, btcOk:5, liquidity:5 };
+  saveToStorage();
+  renderTradeHistory(); renderWeights(); updateLearningStats();
+}
+
+function switchTab(name, el) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+  document.getElementById('tab-' + name).classList.add('active');
+  if (name === 'learning') { renderTradeHistory(); renderWeights(); updateLearningStats(); }
+  if (name === 'info') loadTelegramConfigUI();
+}
+
+// ════ TELEGRAM ════
+function updateTgIndicator() {
+  const has = !!(localStorage.getItem(LS_TG_TOKEN) && localStorage.getItem(LS_TG_CHATID));
+  const ind = document.getElementById('tg-indicator');
+  const sep = document.getElementById('tg-sep');
+  if (ind) ind.style.display = has ? 'flex' : 'none';
+  if (sep) sep.style.display = has ? 'block' : 'none';
+}
+
+function loadTelegramConfigUI() {
+  const tokenInput = document.getElementById('tg-token');
+  const chatInput = document.getElementById('tg-chatid');
+  const nearCheck = document.getElementById('tg-include-near');
+  const status = document.getElementById('tg-status');
+  if (!tokenInput) return;
+  const token = localStorage.getItem(LS_TG_TOKEN) || '';
+  const chatid = localStorage.getItem(LS_TG_CHATID) || '';
+  const near = localStorage.getItem(LS_TG_NEAR) === '1';
+  tokenInput.value = token;
+  chatInput.value = chatid;
+  nearCheck.checked = near;
+  if (token && chatid) {
+    status.textContent = '✓ Configurado';
+    status.style.color = 'var(--green)';
+  } else {
+    status.textContent = 'No configurado';
+    status.style.color = 'var(--text-dim)';
+  }
+}
+
+function saveTelegramConfig() {
+  const token = document.getElementById('tg-token').value.trim();
+  const chatid = document.getElementById('tg-chatid').value.trim();
+  const near = document.getElementById('tg-include-near').checked;
+  const status = document.getElementById('tg-status');
+  if (!token || !chatid) {
+    status.textContent = '✗ Token y Chat ID son obligatorios';
+    status.style.color = 'var(--red)';
+    return;
+  }
+  if (!/^\d+:[A-Za-z0-9_-]+$/.test(token)) {
+    status.textContent = '✗ Token con formato inválido';
+    status.style.color = 'var(--red)';
+    return;
+  }
+  if (!/^-?\d+$/.test(chatid)) {
+    status.textContent = '✗ Chat ID debe ser un número';
+    status.style.color = 'var(--red)';
+    return;
+  }
+  localStorage.setItem(LS_TG_TOKEN, token);
+  localStorage.setItem(LS_TG_CHATID, chatid);
+  localStorage.setItem(LS_TG_NEAR, near ? '1' : '0');
+  status.textContent = '✓ Guardado';
+  status.style.color = 'var(--green)';
+  updateTgIndicator();
+}
+
+function clearTelegramConfig() {
+  if (!confirm('¿Borrar configuración de Telegram?')) return;
+  localStorage.removeItem(LS_TG_TOKEN);
+  localStorage.removeItem(LS_TG_CHATID);
+  localStorage.removeItem(LS_TG_NEAR);
+  document.getElementById('tg-token').value = '';
+  document.getElementById('tg-chatid').value = '';
+  document.getElementById('tg-include-near').checked = false;
+  document.getElementById('tg-status').textContent = 'Borrado';
+  document.getElementById('tg-status').style.color = 'var(--text-dim)';
+  updateTgIndicator();
+}
+
+async function testTelegram() {
+  const token = document.getElementById('tg-token').value.trim();
+  const chatid = document.getElementById('tg-chatid').value.trim();
+  const status = document.getElementById('tg-status');
+  if (!token || !chatid) {
+    status.textContent = '✗ Configura token y chat ID primero';
+    status.style.color = 'var(--red)';
+    return;
+  }
+  status.textContent = 'Enviando...';
+  status.style.color = 'var(--amber)';
+  const t4hMs = timeToNext4hCandle();
+  const t4hMin = Math.floor(t4hMs / 60000);
+  const t4hH = Math.floor(t4hMin / 60);
+  const t4hM = t4hMin % 60;
+  const t4hTxt = t4hH > 0 ? `${t4hH}h ${t4hM}min` : `${t4hM}min`;
+  const modeLabel = mode === 'flex' ? '🟡 Modo actual: *Flexible*' : '⚪ Modo actual: *Estricto*';
+  const text = `🟢 *Short Scanner conectado*\n\n${modeLabel}\n\nSi ves este mensaje, las notificaciones están funcionando correctamente.\n\n⏱ Próximo cierre de vela 4H en: *${t4hTxt}*`;
+  const ok = await sendTelegramMessage(token, chatid, text);
+  if (ok) {
+    status.textContent = '✓ Mensaje enviado, revisa Telegram';
+    status.style.color = 'var(--green)';
+  } else {
+    status.textContent = '✗ Falló el envío, revisa token y chat ID';
+    status.style.color = 'var(--red)';
+  }
+}
+
+async function sendTelegramMessage(token, chatid, text) {
+  try {
+    const url = `https://api.telegram.org/bot${token}/sendMessage`;
+    const r = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: chatid,
+        text: text,
+        parse_mode: 'Markdown',
+        disable_web_page_preview: true
+      })
+    });
+    const data = await r.json();
+    return data.ok === true;
+  } catch(e) {
+    return false;
+  }
+}
+
+// ════ TRACKING DE NOTIFICACIONES ════
+// goNotified: cuándo se mandó la última alerta GO SHORT por token (cooldown 24h)
+// nearToday: tokens que ya recibieron CERCA hoy + timestamp + datos para el recordatorio
+// dayKey: fecha actual (YYYY-MM-DD) — para resetear nearToday a medianoche local
+const goNotified = new Map();    // sym -> timestamp
+const nearToday = new Map();     // sym -> { ts, price, change, score }
+let currentDayKey = todayKey();
+
+function todayKey() {
+  const d = new Date();
+  return d.getFullYear() + '-' + (d.getMonth()+1) + '-' + d.getDate();
+}
+
+function resetDailyTrackingIfNeeded() {
+  const k = todayKey();
+  if (k !== currentDayKey) {
+    currentDayKey = k;
+    nearToday.clear();
+    // El cooldown de GO sí dura 24h reales, así que filtramos por timestamp
+    const cutoff = Date.now() - 24*3600*1000;
+    for (const [sym, ts] of goNotified) {
+      if (ts < cutoff) goNotified.delete(sym);
+    }
+  }
+}
+
+async function sendShortAlert(d) {
+  const token = localStorage.getItem(LS_TG_TOKEN);
+  const chatid = localStorage.getItem(LS_TG_CHATID);
+  if (!token || !chatid) return;
+
+  resetDailyTrackingIfNeeded();
+
+  const isGo = d.verdict.cls === 'go';
+  const isNear = d.verdict.cls === 'near';
+  const sendNear = localStorage.getItem(LS_TG_NEAR) === '1';
+
+  // ═══ GO SHORT: cooldown de 24 horas por token ═══
+  if (isGo) {
+    const lastGo = goNotified.get(d.sym);
+    if (lastGo && (Date.now() - lastGo) < 24*3600*1000) return; // ya se notificó hace menos de 24h
+    goNotified.set(d.sym, Date.now());
+  }
+
+  // ═══ CERCA: una sola vez por día por token ═══
+  if (isNear) {
+    if (!sendNear) return;
+    if (nearToday.has(d.sym)) return; // ya se notificó hoy
+    nearToday.set(d.sym, {
+      ts: Date.now(),
+      price: d.price,
+      change: d.change,
+      score: d.score
+    });
+  }
+
+  // Construir el mensaje principal
+  const emoji = isGo ? '🔴' : '⚡';
+  const title = isGo ? '*GO SHORT*' : '*CERCA*';
+  const modeLabel = mode === 'flex' ? '🟡 _Modo: Flexible_' : '⚪ _Modo: Estricto_';
+  const frTxt = d.fundingRate !== null ? `${d.fundingRate >= 0 ? '+' : ''}${d.fundingRate.toFixed(3)}%` : '—';
+  const rsiTxt = d.rsi !== null ? d.rsi.toFixed(0) : '—';
+  const btcTxt = `${btcTrend.change >= 0 ? '+' : ''}${btcTrend.change.toFixed(2)}%`;
+
+  const c = d.checks || {};
+  const bPump    = c.pump       ? '✅' : '▫️';
+  const bFunding = c.funding    ? '✅' : '▫️';
+  const bRsi     = c.rsi        ? '✅' : '▫️';
+  const bDiv     = c.divergence ? '✅' : '▫️';
+  const bRed     = c.redCandles ? '✅' : '▫️';
+  const bBtc     = c.btcOk      ? '✅' : '▫️';
+  const bLiq     = c.liquidity  ? '✅' : '▫️';
+
+  const divTxt = d.divergence?.found
+    ? `${(d.divergence.strength*100).toFixed(0)}% fuerza`
+    : 'no';
+
+  const t4hMs = timeToNext4hCandle();
+  const t4hMin = Math.floor(t4hMs / 60000);
+  const t4hH = Math.floor(t4hMin / 60);
+  const t4hM = t4hMin % 60;
+  const t4hTxt = t4hH > 0 ? `${t4hH}h ${t4hM}min` : `${t4hM}min`;
+
+  let text = `${emoji} ${title} — *${d.sym}*
+${modeLabel}
+
+💰 Precio: \`$${fmtP(d.price)}\`
+${bPump} 24h: \`+${d.change.toFixed(2)}%\`
+📊 Score: \`${d.score}/100\`
+
+${bFunding} Funding: \`${frTxt}\`
+${bRsi} RSI 4h: \`${rsiTxt}\`
+${bDiv} Divergencia: \`${divTxt}\`
+${bRed} Velas rojas: \`${d.redCount}\` _(cerradas)_
+${bBtc} BTC: \`${btcTxt}\`
+${bLiq} Volumen: \`${fmt(d.vol)}\`
+
+⏱ Cierre vela 4H en: *${t4hTxt}*`;
+
+  // ═══ Si es CERCA y ya hay otros tokens en CERCA hoy, agregar recordatorio ═══
+  if (isNear) {
+    const others = [];
+    for (const [sym, info] of nearToday) {
+      if (sym !== d.sym) others.push({ sym, ...info });
+    }
+    if (others.length > 0) {
+      // ordenar por tiempo de detección (más antiguo primero)
+      others.sort((a, b) => a.ts - b.ts);
+      const list = others.map(o => {
+        const hoursAgo = Math.floor((Date.now() - o.ts) / (3600*1000));
+        const minsAgo = Math.floor((Date.now() - o.ts) / (60*1000)) % 60;
+        const timeAgo = hoursAgo > 0 ? `${hoursAgo}h${minsAgo}m` : `${minsAgo}m`;
+        return `  • *${o.sym}* +${o.change.toFixed(1)}% _(hace ${timeAgo}, score ${o.score})_`;
+      }).join('\n');
+      text += `\n\n📋 _Otros en CERCA hoy:_\n${list}`;
+    }
+  }
+
+  sendTelegramMessage(token, chatid, text);
+}
+
+function setLed(state) { document.getElementById('led').className = 'led' + (state ? ' ' + state : ''); }
+function setStatus(txt) { document.getElementById('status').textContent = txt; }
+function showModal(title, body) {
+  document.getElementById('modal-title').textContent = title;
+  document.getElementById('modal-body').textContent = body;
+  document.getElementById('modal').classList.add('show');
+}
+function closeModal(e) {
+  if (e && e.target.closest('.modal') && !e.target.classList.contains('modal-bg')) return;
+  document.getElementById('modal').classList.remove('show');
+}
+
+renderTradeHistory();
+renderWeights();
+updateLearningStats();
+updateTgIndicator();
+</script>
+</body>
+</html>
