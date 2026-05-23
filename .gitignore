@@ -1,0 +1,50 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Build outputs
+dist/
+build/
+out/
+.next/
+.turbo/
+*.tsbuildinfo
+
+# Test / coverage
+coverage/
+.nyc_output/
+
+# Env (NEVER commit real env files)
+.env
+.env.local
+.env.*.local
+.env.production
+.env.development
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+logs/
+
+# Editors
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.recommended.json
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker
+docker/volumes/
+
+# Misc
+*.pid
+*.seed

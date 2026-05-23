@@ -1,0 +1,27 @@
+{
+  "name": "short-scanner",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Server-side short scanner — NestJS API + React SPA",
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=9.0.0"
+  },
+  "packageManager": "pnpm@10.30.0",
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev --parallel",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "clean": "turbo run clean && rm -rf node_modules .turbo",
+    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md,yml,yaml}\"",
+    "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,md,yml,yaml}\""
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "prettier": "^3.3.3",
+    "turbo": "^2.1.0",
+    "typescript": "^5.5.4"
+  }
+}
