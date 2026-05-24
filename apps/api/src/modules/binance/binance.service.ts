@@ -8,28 +8,36 @@ export interface BinanceFailureStats {
   funding: number;
 }
 
+/**
+ * Cliente Binance enfocado en USDT Perpetual Futures.
+ *
+ * Todos los endpoints viven bajo `fapi.binance.com`:
+ *  - /fapi/v1/ticker/24hr   → universo de perpetuals (lista master)
+ *  - /fapi/v1/klines        → velas 4H por símbolo
+ *  - /fapi/v1/premiumIndex  → funding rate
+ *
+ * El spot se descartó intencionalmente: el scanner está diseñado para detectar
+ * candidatos a short, y solo puedes shortear con leverage en futures.
+ */
 @Injectable()
 export class BinanceService {
   private readonly logger = new Logger(BinanceService.name);
-  private readonly spot: AxiosInstance;
-  private readonly futures: AxiosInstance;
+  private readonly fapi: AxiosInstance;
   private readonly batchSize: number;
   private failures: BinanceFailureStats = { klines: 0, funding: 0 };
 
   constructor(cfg: ConfigService) {
-    const spotBase = cfg.get<string>('BINANCE_SPOT_BASE_URL', 'https://api.binance.com');
     const futuresBase = cfg.get<string>('BINANCE_FUTURES_BASE_URL', 'https://fapi.binance.com');
     const timeout = cfg.get<number>('BINANCE_REQUEST_TIMEOUT_MS', 8000);
     this.batchSize = cfg.get<number>('BINANCE_BATCH_SIZE', 10);
 
-    this.spot = axios.create({ baseURL: spotBase, timeout });
-    this.futures = axios.create({ baseURL: futuresBase, timeout });
-    this.logger.log(`spot=${spotBase} futures=${futuresBase}`);
+    this.fapi = axios.create({ baseURL: futuresBase, timeout });
+    this.logger.log(`fapi=${futuresBase} (futures-only)`);
   }
 
   async fetchAll24hr(): Promise<Ticker24h[]> {
     return this.withRetry(async () => {
-      const res = await this.spot.get<Ticker24h[]>('/api/v3/ticker/24hr');
+      const res = await this.fapi.get<Ticker24h[]>('/fapi/v1/ticker/24hr');
       return res.data;
     });
   }
@@ -48,7 +56,7 @@ export class BinanceService {
         // 451 = bloqueo geo, no reintentable. Mensaje accionable.
         if (err instanceof AxiosError && err.response?.status === 451) {
           throw new Error(
-            'Binance respondió 451 (geo-bloqueo). Si estás en US, activa VPN o usa BINANCE_SPOT_BASE_URL=https://api.binance.us en apps/api/.env',
+            'Binance respondió 451 (geo-bloqueo). Activa VPN o usa otra región. Futures no tiene equivalente en binance.us.',
           );
         }
         // 4xx no-transient (400, 403, 404) tampoco reintentables
@@ -72,7 +80,7 @@ export class BinanceService {
   /** Devuelve null si Binance rechaza el símbolo o hay error transitorio. */
   async fetchKlines(symbol: string, interval = '4h', limit = 50): Promise<Kline[] | null> {
     try {
-      const res = await this.spot.get<RawKline[]>('/api/v3/klines', {
+      const res = await this.fapi.get<RawKline[]>('/fapi/v1/klines', {
         params: { symbol, interval, limit },
       });
       return res.data.map(parseKline);
@@ -86,7 +94,7 @@ export class BinanceService {
   /** Devuelve el funding rate en porcentaje (× 100). null si el par no tiene futuros. */
   async fetchFundingRate(symbol: string): Promise<number | null> {
     try {
-      const res = await this.futures.get<{ lastFundingRate?: string }>('/fapi/v1/premiumIndex', {
+      const res = await this.fapi.get<{ lastFundingRate?: string }>('/fapi/v1/premiumIndex', {
         params: { symbol },
       });
       const raw = res.data.lastFundingRate;

@@ -39,6 +39,19 @@ export class ScannerService implements OnModuleInit {
   async onModuleInit(): Promise<void> {
     // Saltarse el scan inicial en test para no pegarle a Binance ni dejar handles abiertos
     if (process.env.NODE_ENV === 'test') return;
+
+    // Hidratar el store con mode/thresholds persistidos en User antes del primer scan.
+    // Si la BD no está lista, seguimos con los defaults del store y el primer scan
+    // reintentará al leer User.weights inline.
+    try {
+      const user = await this.users.getById(DEFAULT_USER_ID);
+      this.state.setMode(user.mode);
+      this.state.setThresholds(user.thresholds);
+      this.logger.log(`hidrated from User · mode=${user.mode} thresholds=${JSON.stringify(user.thresholds)}`);
+    } catch (err) {
+      this.logger.warn(`no se pudo hidratar el store desde User (usando defaults): ${err}`);
+    }
+
     // Primer scan al boot para no esperar 2 min en blanco
     void this.runScan().catch((err) => this.logger.error('initial scan failed', err));
   }

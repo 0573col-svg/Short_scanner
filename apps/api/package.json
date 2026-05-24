@@ -12,7 +12,12 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "jest",
     "test:e2e": "jest --config ./test/jest-e2e.json",
-    "clean": "rm -rf dist .turbo coverage"
+    "clean": "rm -rf dist .turbo coverage",
+    "typeorm": "typeorm-ts-node-commonjs",
+    "migration:generate": "pnpm build && typeorm -d dist/data-source.js migration:generate",
+    "migration:run": "pnpm build && typeorm -d dist/data-source.js migration:run",
+    "migration:revert": "pnpm build && typeorm -d dist/data-source.js migration:revert",
+    "migration:show": "pnpm build && typeorm -d dist/data-source.js migration:show"
   },
   "dependencies": {
     "@nestjs/bullmq": "^11.0.4",

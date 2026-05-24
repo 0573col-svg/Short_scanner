@@ -82,20 +82,19 @@ En `localhost:5173`:
 
 ### Binance: requiere acceso sin geo-bloqueo
 
-El scanner pega a `api.binance.com` (spot) y `fapi.binance.com` (futures).
-Ambos responden **HTTP 451** desde IPs en US sin VPN. Si pasa, el API
-arranca pero el primer scan falla con un mensaje claro indicándolo.
+El scanner es **futures-only** y pega a `fapi.binance.com`. Responde **HTTP 451**
+desde IPs en US sin VPN. Si pasa, el API arranca pero el primer scan falla con
+un mensaje claro indicándolo.
 
 **Soluciones**:
 
 1. **VPN a nivel sistema** (recomendado) — activa una VPN fuera de US antes
    de levantar el API. Node usa la conexión del sistema.
-2. **Fallback a binance.us** — solo si no puedes usar VPN. En `apps/api/.env`:
+2. **Testnet de futures** para tests/dev — en `apps/api/.env`:
    ```dotenv
-   BINANCE_SPOT_BASE_URL=https://api.binance.us
+   BINANCE_FUTURES_BASE_URL=https://testnet.binancefuture.com
    ```
-   Pero binance.us tiene muchos menos pairs con volumen y **sin futures**
-   (funding rate siempre null).
+   (no hay equivalente "futures" en binance.us — binance.us es spot-only)
 
 ### Otros comandos útiles
 

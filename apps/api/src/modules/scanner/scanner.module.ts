@@ -23,5 +23,6 @@ import { ScansGateway } from './scans.gateway';
   ],
   controllers: [ScansController],
   providers: [ScannerService, ScannerStateStore, ScansGateway],
+  exports: [ScannerStateStore],
 })
 export class ScannerModule {}

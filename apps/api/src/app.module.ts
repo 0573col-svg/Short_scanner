@@ -27,11 +27,14 @@ import { validateEnv } from './config/env.validation';
         url: cfg.get<string>('DATABASE_URL'),
         entities: [path.join(__dirname, '/**/*.entity{.ts,.js}')],
         migrations: [path.join(__dirname, '/migrations/*{.ts,.js}')],
-        // En dev, sincronizamos para iterar rápido. En prod usaríamos migrations
-        // versionadas (cambiar a synchronize: false + migrationsRun: true).
-        synchronize: cfg.get('NODE_ENV') === 'development',
-        migrationsRun: cfg.get('NODE_ENV') === 'production',
+        // Migrations versionadas siempre. Cualquier cambio de schema requiere
+        // `pnpm migration:generate <Name>` y commit del archivo generado.
+        synchronize: false,
+        migrationsRun: true,
         logging: cfg.get('NODE_ENV') === 'development' ? ['error', 'warn'] : ['error'],
+        // Reintentos al boot — clave si Postgres tarda en levantarse (docker stack)
+        retryAttempts: 10,
+        retryDelay: 3000,
         extra: {
           max: 10,
           connectionTimeoutMillis: 10_000,

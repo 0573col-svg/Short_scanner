@@ -23,6 +23,14 @@ import { TelegramModule } from '../telegram/telegram.module';
             username: u.username || undefined,
             // Aceptar TLS si la URL es rediss://
             tls: u.protocol === 'rediss:' ? {} : undefined,
+            // Retry strategy: si Redis no está al boot, ioredis reintenta
+            // exponencialmente hasta que esté disponible. 50ms→2s cap.
+            retryStrategy: (times: number) => Math.min(50 * Math.pow(2, times), 2000),
+            // Habilitar offline queue para que los .add() durante el outage
+            // no fallen — se procesan cuando vuelve la conexión
+            enableOfflineQueue: true,
+            // BullMQ recomienda esto
+            maxRetriesPerRequest: null,
           },
           defaultJobOptions: {
             removeOnComplete: { age: 3600, count: 1000 },

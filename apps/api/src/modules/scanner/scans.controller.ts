@@ -3,12 +3,15 @@ import type { ScanState } from '@short-scanner/shared-types';
 import { ScannerStateStore } from './scanner.state';
 import { ScannerService } from './scanner.service';
 import { SettingsPatchDto } from './dto/settings-patch.dto';
+import { UsersService } from '../users/users.service';
+import { DEFAULT_USER_ID } from '../../common/single-user';
 
 @Controller('scans')
 export class ScansController {
   constructor(
     private readonly state: ScannerStateStore,
     private readonly scanner: ScannerService,
+    private readonly users: UsersService,
   ) {}
 
   @Get('current')
@@ -17,7 +20,10 @@ export class ScansController {
   }
 
   @Patch('settings')
-  setSettings(@Body() body: SettingsPatchDto): ScanState {
+  async setSettings(@Body() body: SettingsPatchDto): Promise<ScanState> {
+    // Source of truth: User entity (persiste tras restart)
+    await this.users.updateSettings(DEFAULT_USER_ID, body);
+    // Mantener el cache in-memory sincronizado para que el próximo scan los use sin re-fetch
     if (body.mode) this.state.setMode(body.mode);
     if (body.thresholds) this.state.setThresholds(body.thresholds);
     return this.state.get();
