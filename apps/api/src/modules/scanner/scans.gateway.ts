@@ -1,4 +1,6 @@
-import { Logger } from '@nestjs/common';
+import { Logger, UnauthorizedException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { JwtService } from '@nestjs/jwt';
 import {
   OnGatewayConnection,
   OnGatewayDisconnect,
@@ -14,6 +16,8 @@ import {
   ScanUpdatePayload,
 } from '@short-scanner/shared-types';
 import { ScannerStateStore } from './scanner.state';
+import { UsersService } from '../users/users.service';
+import type { JwtPayload } from '../auth/auth.types';
 
 // El decorador se evalúa en module-load, antes de que NestJS provea ConfigService,
 // por eso leemos directo de process.env. Coincide con cómo main.ts arma CORS HTTP.
@@ -23,10 +27,14 @@ function buildCorsOrigin() {
   return (origin: string | undefined, cb: OriginCallback) => {
     const raw = process.env.CORS_ORIGINS ?? 'http://localhost:5173';
     const allowed = raw.split(',').map((s) => s.trim()).filter(Boolean);
-    // Sin Origin (ej. herramientas CLI / same-origin) → permitir
     if (!origin) return cb(null, true);
     cb(null, allowed.includes(origin));
   };
+}
+
+/** Decoramos el Socket con el userId que extraemos del JWT en handshake. */
+interface AuthSocket extends Socket {
+  data: { userId?: string; email?: string };
 }
 
 @WebSocketGateway({
@@ -39,33 +47,69 @@ export class ScansGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @WebSocketServer()
   server!: Server;
 
-  constructor(private readonly state: ScannerStateStore) {}
+  constructor(
+    private readonly state: ScannerStateStore,
+    private readonly users: UsersService,
+    private readonly jwt: JwtService,
+    private readonly cfg: ConfigService,
+  ) {}
 
-  handleConnection(client: Socket): void {
-    this.logger.debug(`client connected: ${client.id}`);
-    // Push del estado actual para que el cliente vea algo inmediatamente
-    client.emit('scan:status', this.state.get());
+  /**
+   * Valida JWT en el handshake y guarda userId en socket.data.
+   * El cliente lo manda como `auth: { token }` al conectar.
+   */
+  async handleConnection(client: AuthSocket): Promise<void> {
+    try {
+      const token = (client.handshake.auth?.token ?? client.handshake.headers['authorization']) as
+        | string
+        | undefined;
+      if (!token) throw new UnauthorizedException('Sin token');
+      const clean = token.startsWith('Bearer ') ? token.slice(7) : token;
+      const payload = await this.jwt.verifyAsync<JwtPayload>(clean, {
+        secret: this.cfg.get<string>('JWT_SECRET'),
+      });
+      if (payload.type !== 'access') throw new UnauthorizedException('Usar access token');
+
+      client.data.userId = payload.sub;
+      client.data.email = payload.email;
+      await client.join(`user:${payload.sub}`);
+      this.logger.debug(`client connected: ${client.id} (user ${payload.email})`);
+
+      // Push del estado actual del user inmediatamente
+      const u = await this.users.getById(payload.sub);
+      client.emit('scan:status', this.state.getForUser(payload.sub, u.mode, u.thresholds));
+    } catch (err) {
+      this.logger.warn(`WS auth rejected: ${err instanceof Error ? err.message : err}`);
+      client.emit('scan:auth-error', { message: 'No autorizado' });
+      client.disconnect(true);
+    }
   }
 
-  handleDisconnect(client: Socket): void {
-    this.logger.debug(`client disconnected: ${client.id}`);
+  handleDisconnect(client: AuthSocket): void {
+    if (client.data?.userId) {
+      this.logger.debug(`client disconnected: ${client.id} (user ${client.data.email})`);
+    }
   }
 
   @SubscribeMessage('scan:subscribe')
-  handleSubscribe(client: Socket): void {
-    client.emit('scan:status', this.state.get());
+  async handleSubscribe(client: AuthSocket): Promise<void> {
+    if (!client.data?.userId) return;
+    const u = await this.users.getById(client.data.userId);
+    client.emit('scan:status', this.state.getForUser(client.data.userId, u.mode, u.thresholds));
   }
 
-  emitScanUpdate(payload: ScanUpdatePayload): void {
-    this.server?.emit('scan:update', payload);
-    this.server?.emit('scan:status', this.state.get());
+  /** Emit scan update solo a la room de UN usuario */
+  emitScanUpdateForUser(userId: string, payload: ScanUpdatePayload): void {
+    this.server?.to(`user:${userId}`).emit('scan:update', payload);
   }
 
+  /** Emit alert solo a la room de UN usuario */
+  emitAlertForUser(userId: string, alert: ScanAlert): void {
+    this.server?.to(`user:${userId}`).emit('alert:new', alert);
+  }
+
+  /** Tick es shared (estado del cron compartido entre users) */
   emitTick(payload: ScanTickPayload): void {
     this.server?.emit('scan:tick', payload);
-  }
-
-  emitAlert(alert: ScanAlert): void {
-    this.server?.emit('alert:new', alert);
   }
 }

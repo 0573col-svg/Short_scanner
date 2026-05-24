@@ -14,7 +14,8 @@ import {
 import type { TrackedStatus, TrackedTokenView } from '@short-scanner/shared-types';
 import { TrackingService } from './tracking.service';
 import { TradesService } from '../trades/trades.service';
-import { DEFAULT_USER_ID } from '../../common/single-user';
+import { CurrentUser } from '../auth/current-user.decorator';
+import type { AuthenticatedUser } from '../auth/auth.types';
 
 const ALL_STATUSES: TrackedStatus[] = ['ACTIVE', 'DORMANT', 'SHORTED', 'CLOSED', 'ARCHIVED'];
 
@@ -28,35 +29,43 @@ export class TrackingController {
 
   @Get()
   async list(
+    @CurrentUser() user: AuthenticatedUser,
     @Query('status') statusParam?: string,
   ): Promise<TrackedTokenView[]> {
     const statuses = parseStatuses(statusParam) ?? ['ACTIVE', 'DORMANT', 'SHORTED'];
-    return this.tracking.listByStatus(DEFAULT_USER_ID, statuses);
+    return this.tracking.listByStatus(user.id, statuses);
   }
 
   @Get(':id')
-  async detail(@Param('id', ParseUUIDPipe) id: string): Promise<TrackedTokenView> {
-    return this.tracking.getById(DEFAULT_USER_ID, id);
+  async detail(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<TrackedTokenView> {
+    return this.tracking.getById(user.id, id);
   }
 
   /** Marca el tracked token como SHORTED y crea un Trade enlazado. */
   @Post(':id/short')
   async short(
+    @CurrentUser() user: AuthenticatedUser,
     @Param('id', ParseUUIDPipe) id: string,
     @Body() body: { notes?: string },
   ) {
-    const tracked = await this.tracking.getById(DEFAULT_USER_ID, id);
+    const tracked = await this.tracking.getById(user.id, id);
     if (tracked.status === 'SHORTED' || tracked.status === 'CLOSED') {
       throw new BadRequestException(`Token ya estaba ${tracked.status}`);
     }
-    const trade = await this.trades.openFromTracked(DEFAULT_USER_ID, tracked, body.notes ?? null);
-    const updated = await this.tracking.markShorted(DEFAULT_USER_ID, id, trade.id);
+    const trade = await this.trades.openFromTracked(user.id, tracked, body.notes ?? null);
+    const updated = await this.tracking.markShorted(user.id, id, trade.id);
     return { tracked: updated, trade };
   }
 
   @Delete(':id')
-  async remove(@Param('id', ParseUUIDPipe) id: string): Promise<{ ok: true }> {
-    await this.tracking.deleteOne(DEFAULT_USER_ID, id);
+  async remove(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<{ ok: true }> {
+    await this.tracking.deleteOne(user.id, id);
     return { ok: true };
   }
 }

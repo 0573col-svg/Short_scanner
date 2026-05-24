@@ -48,6 +48,24 @@ class EnvVars {
   @IsString()
   @IsOptional()
   TELEGRAM_API_BASE_URL: string = 'https://api.telegram.org';
+
+  // ── JWT auth (Sprint 4 — JWT propio, sin Supabase) ──────────
+  // Secret para firmar tokens. En prod rotar y meter como secret del provider.
+  // Generar con: openssl rand -base64 64
+  @IsString()
+  @IsOptional()
+  JWT_SECRET: string =
+    'dev-only-insecure-secret-please-rotate-in-prod-use-openssl-rand-base64-64';
+
+  /** Tiempo de vida del access token. Formato vercel/ms: "15m", "1h", "7d". */
+  @IsString()
+  @IsOptional()
+  JWT_ACCESS_TTL: string = '15m';
+
+  /** Tiempo de vida del refresh token. */
+  @IsString()
+  @IsOptional()
+  JWT_REFRESH_TTL: string = '7d';
 }
 
 export function validateEnv(config: Record<string, unknown>): EnvVars {

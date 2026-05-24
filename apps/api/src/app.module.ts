@@ -1,9 +1,12 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
+import { APP_GUARD } from '@nestjs/core';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import * as path from 'node:path';
 import { HealthModule } from './health/health.module';
 import { CommonModule } from './common/common.module';
+import { AuthModule } from './modules/auth/auth.module';
+import { JwtAuthGuard } from './modules/auth/jwt-auth.guard';
 import { ScannerModule } from './modules/scanner/scanner.module';
 import { TrackingModule } from './modules/tracking/tracking.module';
 import { TradesModule } from './modules/trades/trades.module';
@@ -42,6 +45,7 @@ import { validateEnv } from './config/env.validation';
       }),
     }),
     CommonModule,
+    AuthModule,
     HealthModule,
     UsersModule,
     TelegramModule,
@@ -50,6 +54,10 @@ import { validateEnv } from './config/env.validation';
     ScannerModule,
     TrackingModule,
     TradesModule,
+  ],
+  providers: [
+    // Auth global: todos los endpoints requieren JWT salvo @Public()
+    { provide: APP_GUARD, useClass: JwtAuthGuard },
   ],
 })
 export class AppModule {}

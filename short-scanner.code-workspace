@@ -1,0 +1,176 @@
+{
+  "folders": [
+    {
+      "name": "🔧 Root (monorepo)",
+      "path": "."
+    },
+    {
+      "name": "⚡ API (NestJS backend)",
+      "path": "apps/api"
+    },
+    {
+      "name": "🎨 Web (React frontend)",
+      "path": "apps/web"
+    },
+    {
+      "name": "📦 shared-types",
+      "path": "packages/shared-types"
+    },
+    {
+      "name": "🐳 docker",
+      "path": "docker"
+    }
+  ],
+  "settings": {
+    // ── TypeScript: usar la versión del workspace, no la global de VSCode ──
+    "typescript.tsdk": "node_modules/typescript/lib",
+    "typescript.enablePromptUseWorkspaceTsdk": true,
+
+    // ── ESLint: que cada folder use su propio config ──
+    "eslint.workingDirectories": [
+      { "pattern": "apps/*" },
+      { "pattern": "packages/*" }
+    ],
+    "eslint.validate": ["javascript", "typescript", "typescriptreact"],
+
+    // ── Format on save con Prettier ──
+    "editor.formatOnSave": true,
+    "editor.defaultFormatter": "esbenp.prettier-vscode",
+    "editor.codeActionsOnSave": {
+      "source.fixAll.eslint": "explicit"
+    },
+
+    // ── Excluir ruido visual ──
+    "files.exclude": {
+      "**/node_modules": true,
+      "**/.turbo": true,
+      "**/dist": true,
+      "**/.vite": true,
+      "**/*.tsbuildinfo": true
+    },
+    "search.exclude": {
+      "**/node_modules": true,
+      "**/.turbo": true,
+      "**/dist": true,
+      "**/pnpm-lock.yaml": true,
+      "**/coverage": true
+    },
+
+    // ── Tailwind IntelliSense solo en el folder web ──
+    "tailwindCSS.experimental.configFile": "apps/web/tailwind.config.js",
+
+    // ── Files associations ──
+    "files.associations": {
+      "*.css": "tailwindcss"
+    }
+  },
+  "extensions": {
+    "recommendations": [
+      "dbaeumer.vscode-eslint",
+      "esbenp.prettier-vscode",
+      "bradlc.vscode-tailwindcss",
+      "Prisma.prisma",
+      "ms-azuretools.vscode-docker",
+      "EditorConfig.EditorConfig"
+    ]
+  },
+  "tasks": {
+    "version": "2.0.0",
+    "tasks": [
+      {
+        "label": "▶ Dev (API + Web)",
+        "type": "shell",
+        "command": "pnpm dev",
+        "options": { "cwd": "${workspaceFolder:🔧 Root (monorepo)}" },
+        "presentation": { "reveal": "always", "panel": "dedicated" },
+        "problemMatcher": []
+      },
+      {
+        "label": "▶ Dev: solo API",
+        "type": "shell",
+        "command": "pnpm --filter @short-scanner/api dev",
+        "options": { "cwd": "${workspaceFolder:🔧 Root (monorepo)}" },
+        "presentation": { "reveal": "always", "panel": "dedicated" },
+        "problemMatcher": []
+      },
+      {
+        "label": "▶ Dev: solo Web",
+        "type": "shell",
+        "command": "pnpm --filter @short-scanner/web dev",
+        "options": { "cwd": "${workspaceFolder:🔧 Root (monorepo)}" },
+        "presentation": { "reveal": "always", "panel": "dedicated" },
+        "problemMatcher": []
+      },
+      {
+        "label": "🐳 Docker compose up (postgres + redis)",
+        "type": "shell",
+        "command": "docker compose -f docker/docker-compose.yml up -d",
+        "options": { "cwd": "${workspaceFolder:🔧 Root (monorepo)}" },
+        "problemMatcher": []
+      },
+      {
+        "label": "🐳 Docker compose down",
+        "type": "shell",
+        "command": "docker compose -f docker/docker-compose.yml down",
+        "options": { "cwd": "${workspaceFolder:🔧 Root (monorepo)}" },
+        "problemMatcher": []
+      },
+      {
+        "label": "🔨 Build all",
+        "type": "shell",
+        "command": "pnpm build",
+        "options": { "cwd": "${workspaceFolder:🔧 Root (monorepo)}" },
+        "group": { "kind": "build", "isDefault": true },
+        "problemMatcher": []
+      },
+      {
+        "label": "🧪 Test API",
+        "type": "shell",
+        "command": "pnpm --filter @short-scanner/api test",
+        "options": { "cwd": "${workspaceFolder:🔧 Root (monorepo)}" },
+        "group": { "kind": "test", "isDefault": true },
+        "problemMatcher": []
+      },
+      {
+        "label": "🧹 Lint all",
+        "type": "shell",
+        "command": "pnpm lint",
+        "options": { "cwd": "${workspaceFolder:🔧 Root (monorepo)}" },
+        "problemMatcher": []
+      },
+      {
+        "label": "📜 Tail API logs",
+        "type": "shell",
+        "command": "tail -f /tmp/short-scanner-api.log 2>/dev/null || echo 'No hay log file. Corré pnpm dev primero.'",
+        "presentation": { "reveal": "always", "panel": "dedicated" },
+        "problemMatcher": []
+      }
+    ]
+  },
+  "launch": {
+    "version": "0.2.0",
+    "configurations": [
+      {
+        "name": "🐛 Debug API (NestJS)",
+        "type": "node",
+        "request": "launch",
+        "runtimeExecutable": "pnpm",
+        "runtimeArgs": ["--filter", "@short-scanner/api", "dev"],
+        "cwd": "${workspaceFolder:🔧 Root (monorepo)}",
+        "console": "integratedTerminal",
+        "skipFiles": ["<node_internals>/**", "**/node_modules/**"],
+        "outputCapture": "std"
+      },
+      {
+        "name": "🐛 Debug Jest (API)",
+        "type": "node",
+        "request": "launch",
+        "runtimeExecutable": "pnpm",
+        "runtimeArgs": ["exec", "jest", "--runInBand", "--watch=false"],
+        "cwd": "${workspaceFolder:⚡ API (NestJS backend)}",
+        "console": "integratedTerminal",
+        "skipFiles": ["<node_internals>/**", "**/node_modules/**"]
+      }
+    ]
+  }
+}

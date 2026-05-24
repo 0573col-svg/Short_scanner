@@ -25,10 +25,6 @@ export function Settings() {
     try {
       const data = await api.getMe();
       setMe(data);
-      if (data.telegram) {
-        setChatId(data.telegram.chatId);
-        setNearAlerts(data.telegram.nearAlertsEnabled);
-      }
       setError(null);
     } catch (e) {
       setError(fmtErr(e));
@@ -40,6 +36,19 @@ export function Settings() {
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  // Sincroniza form fields cuando `me.telegram` cambia (incl. tras claim-default,
+  // delete, o llegada de actualizaciones cross-tab).
+  const tg = me?.telegram ?? null;
+  useEffect(() => {
+    if (tg) {
+      setChatId(tg.chatId);
+      setNearAlerts(tg.nearAlertsEnabled);
+    } else {
+      setChatId('');
+      setNearAlerts(false);
+    }
+  }, [tg]);
 
   const onSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -216,8 +225,10 @@ export function Settings() {
 
       {me && (
         <section className="rounded-lg border border-line bg-bg-2 p-5 space-y-2">
-          <h3 className="text-sm font-semibold">Pesos del scoring (read-only)</h3>
-          <p className="text-xs text-zinc-500">Cuando entre el learning loop (Sprint 3 part 2), estos se recalibrarán automáticamente al cerrar trades.</p>
+          <h3 className="text-sm font-semibold">Pesos del scoring (recalibrados al cerrar trades)</h3>
+          <p className="text-xs text-zinc-500">
+            Suma siempre 100. El learning loop ajusta cada peso según el winrate por condición.
+          </p>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-3">
             {Object.entries(me.weights).map(([k, v]) => (
               <div key={k} className="bg-bg-3 border border-line rounded px-3 py-2 font-mono text-xs">
@@ -228,6 +239,38 @@ export function Settings() {
           </div>
         </section>
       )}
+
+      <section className="rounded-lg border border-line bg-bg-2 p-5 space-y-3">
+        <h3 className="text-sm font-semibold">Reclamar datos legacy</h3>
+        <p className="text-xs text-zinc-500">
+          Si venías del modo single-user (antes de tener cuenta), tus trades + tracking + telegram
+          están bajo un usuario default. Este botón los reasigna a tu cuenta actual. Es idempotente:
+          si ya estaba vacío, no hace nada.
+        </p>
+        <button
+          type="button"
+          disabled={busy}
+          onClick={async () => {
+            if (!confirm('¿Reclamar todos los datos del usuario legacy?')) return;
+            setBusy(true);
+            try {
+              const r = await api.claimDefault();
+              setInfo(
+                `Reclamados: ${r.trades} trades · ${r.trackedTokens.moved} tracked nuevos (${r.trackedTokens.merged} fusionados con existentes) · telegram ${r.telegramReassigned ? 'sí' : 'no'}`,
+              );
+              setError(null);
+              await refresh();
+            } catch (e) {
+              setError(`Claim: ${e instanceof Error ? e.message : 'error'}`);
+            } finally {
+              setBusy(false);
+            }
+          }}
+          className="px-4 py-2 text-sm font-semibold bg-zinc-700 hover:bg-zinc-600 text-white rounded transition disabled:opacity-50"
+        >
+          Reclamar datos del legacy user
+        </button>
+      </section>
     </div>
   );
 }

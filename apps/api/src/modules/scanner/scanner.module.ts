@@ -6,6 +6,7 @@ import { ScoringModule } from '../scoring/scoring.module';
 import { TrackingModule } from '../tracking/tracking.module';
 import { AlertsModule } from '../alerts/alerts.module';
 import { UsersModule } from '../users/users.module';
+import { AuthModule } from '../auth/auth.module';
 import { ScannerService } from './scanner.service';
 import { ScannerStateStore } from './scanner.state';
 import { ScansController } from './scans.controller';
@@ -20,6 +21,7 @@ import { ScansGateway } from './scans.gateway';
     TrackingModule,
     AlertsModule,
     UsersModule,
+    AuthModule, // para JwtService en ScansGateway handshake
   ],
   controllers: [ScansController],
   providers: [ScannerService, ScannerStateStore, ScansGateway],

@@ -11,7 +11,7 @@ import { ScansGateway } from './scans.gateway';
 import { TrackingService } from '../tracking/tracking.service';
 import { AlertDispatcher } from '../alerts/alert-dispatcher.service';
 import { UsersService } from '../users/users.service';
-import { DEFAULT_USER_ID } from '../../common/single-user';
+import { UserEntity } from '../users/user.entity';
 
 const SYM_RE = /^[A-Z0-9]{2,15}$/;
 const SCAN_CRON = '*/2 * * * *';
@@ -37,22 +37,8 @@ export class ScannerService implements OnModuleInit {
   }
 
   async onModuleInit(): Promise<void> {
-    // Saltarse el scan inicial en test para no pegarle a Binance ni dejar handles abiertos
+    // Saltarse el scan inicial en test
     if (process.env.NODE_ENV === 'test') return;
-
-    // Hidratar el store con mode/thresholds persistidos en User antes del primer scan.
-    // Si la BD no está lista, seguimos con los defaults del store y el primer scan
-    // reintentará al leer User.weights inline.
-    try {
-      const user = await this.users.getById(DEFAULT_USER_ID);
-      this.state.setMode(user.mode);
-      this.state.setThresholds(user.thresholds);
-      this.logger.log(`hidrated from User · mode=${user.mode} thresholds=${JSON.stringify(user.thresholds)}`);
-    } catch (err) {
-      this.logger.warn(`no se pudo hidratar el store desde User (usando defaults): ${err}`);
-    }
-
-    // Primer scan al boot para no esperar 2 min en blanco
     void this.runScan().catch((err) => this.logger.error('initial scan failed', err));
   }
 
@@ -61,50 +47,67 @@ export class ScannerService implements OnModuleInit {
     await this.runScan();
   }
 
+  /**
+   * Multi-user scan loop:
+   *  1. Fetch shared: tickers + BTC trend
+   *  2. Cargar TODOS los usuarios
+   *  3. Determinar el universo COMÚN de candidates (más permisivo entre todos):
+   *     - vol mínimo = MIN(thresholds.minVolUsd) entre users
+   *     - topN     = MAX(thresholds.topN) entre users
+   *  4. Enriquecer ese universo UNA SOLA VEZ (shared)
+   *  5. Por cada user: re-score con SUS weights/mode/pumpPct, reconcile tracking,
+   *     dispatch alerts, emit WS update a su room
+   *
+   * Garantía: 1 fetch Binance compartido sin importar cuántos users.
+   */
   async runScan(): Promise<void> {
-    if (this.state.get().running) {
+    if (this.state.getGlobal().running) {
       this.logger.debug('scan already in progress, skipping');
       return;
     }
     this.state.setRunning(true);
     this.gateway.emitTick({ secondsToNext: 0, status: 'scanning' });
     const started = Date.now();
-    let scoredCount = 0;
+    let enrichedCount = 0;
+    let userCount = 0;
+    let totalAlerts = 0;
 
     try {
       const tickers = await this.binance.fetchAll24hr();
 
-      // BTC trend
+      // BTC trend (shared)
       const btcRow = tickers.find((t) => t.symbol === 'BTCUSDT');
       if (btcRow) {
         const change = parseFloat(btcRow.priceChangePercent);
         this.state.setBtc({ change, falling: change <= -2 });
       }
+      const btc = this.state.getGlobal().btc;
 
-      const { thresholds, mode, btc } = this.state.get();
-      // Lee los pesos recalibrados del User (LearningService los actualiza al cerrar trades).
-      // Si la BD aún no está lista, cae al default in-memory.
-      let weights = this.state.getWeights();
-      try {
-        weights = (await this.users.getById(DEFAULT_USER_ID)).weights;
-      } catch (err) {
-        this.logger.debug(`User.weights no disponible, usando defaults: ${err}`);
+      // Cargar users activos
+      const allUsers = await this.users.listAll();
+      userCount = allUsers.length;
+      if (allUsers.length === 0) {
+        this.logger.warn('no users registered; scan completes without per-user scoring');
+        return;
       }
 
-      // Filtro: USDT pair, no-stable, vol mínimo, símbolo válido
+      // Universo común — más permisivo
+      const minVol = Math.min(...allUsers.map((u) => u.thresholds.minVolUsd));
+      const maxTopN = Math.max(...allUsers.map((u) => u.thresholds.topN));
+
       const candidates = tickers
         .filter((t) => {
           if (!t.symbol.endsWith('USDT')) return false;
           const base = t.symbol.slice(0, -4);
           if (STABLE_BASES.has(base)) return false;
           if (!SYM_RE.test(base)) return false;
-          if (parseFloat(t.quoteVolume) < thresholds.minVolUsd) return false;
+          if (parseFloat(t.quoteVolume) < minVol) return false;
           return true;
         })
         .sort((a, b) => parseFloat(b.priceChangePercent) - parseFloat(a.priceChangePercent))
-        .slice(0, thresholds.topN);
+        .slice(0, maxTopN);
 
-      // Enriquecer con klines + funding rate en lotes
+      // Enriquecimiento shared
       const enriched = await this.binance.batchedMap(candidates, async (t): Promise<TokenSnapshot> => {
         const base = t.symbol.slice(0, -4);
         const [klines, fr] = await Promise.all([
@@ -125,50 +128,22 @@ export class ScannerService implements OnModuleInit {
           ts: Date.now(),
         };
       });
-
-      // Score
-      const scored: ScoredToken[] = enriched.map((snapshot) =>
-        this.scoring.score({
-          snapshot,
-          weights,
-          mode,
-          pumpThreshold: thresholds.pumpPct,
-          btc,
-        }),
-      );
-
-      // Ordenar igual que el v22: score desc, passedCount desc, change desc
-      scored.sort((a, b) => {
-        if (b.score !== a.score) return b.score - a.score;
-        if (b.passedCount !== a.passedCount) return b.passedCount - a.passedCount;
-        return b.snapshot.change - a.snapshot.change;
-      });
+      enrichedCount = enriched.length;
+      this.state.setEnriched(enriched);
 
       const nextAt = Date.now() + this.intervalMs;
-      const newAlerts = this.state.applyScanResults(scored, nextAt);
-      scoredCount = scored.length;
 
-      // Reconciliar el estado persistente de tracking (Sprint 2).
-      // No bloqueamos el scan si esto falla — la BD podría estar caída.
-      try {
-        await this.tracking.reconcile(DEFAULT_USER_ID, scored);
-      } catch (err) {
-        this.logger.error('tracking reconcile failed (continuing scan)', err);
-      }
-
-      this.gateway.emitScanUpdate({ ranAt: Date.now(), results: scored, newAlerts });
-      for (const alert of newAlerts) {
-        this.gateway.emitAlert(alert);
-        // Encolar para Telegram (el processor decide si mandar según config del user)
-        void this.alerts.dispatch(DEFAULT_USER_ID, alert);
+      // Por cada user: score + reconcile + alertar
+      for (const user of allUsers) {
+        const userAlerts = await this.processUser(user, enriched, btc, nextAt);
+        totalAlerts += userAlerts;
       }
 
       const ms = Date.now() - started;
       const fails = this.binance.drainFailures();
-      const klinesOk = scoredCount - fails.klines;
-      const summary = `scan done in ${ms}ms · ${scoredCount} tokens · klines ${klinesOk}/${scoredCount} · funding fails ${fails.funding} · ${newAlerts.length} new alerts · BTC ${btc.change.toFixed(2)}%`;
-      // Si más del 20% de klines fallaron, levantar a warn
-      if (scoredCount > 0 && fails.klines / scoredCount > 0.2) this.logger.warn(summary);
+      const klinesOk = enrichedCount - fails.klines;
+      const summary = `scan done in ${ms}ms · ${enrichedCount} tokens · klines ${klinesOk}/${enrichedCount} · funding fails ${fails.funding} · ${userCount} users · ${totalAlerts} new alerts · BTC ${btc.change.toFixed(2)}%`;
+      if (enrichedCount > 0 && fails.klines / enrichedCount > 0.2) this.logger.warn(summary);
       else this.logger.log(summary);
     } catch (err) {
       this.logger.error('scan failed', err);
@@ -178,8 +153,6 @@ export class ScannerService implements OnModuleInit {
         message: err instanceof Error ? err.message : 'unknown',
       });
     } finally {
-      // Drenar SIEMPRE el contador para que un scan a medias no contamine al siguiente.
-      // (En el happy path ya se drenó arriba — el segundo drain devuelve 0,0.)
       const leftover = this.binance.drainFailures();
       if (leftover.klines || leftover.funding) {
         this.logger.warn(
@@ -192,5 +165,56 @@ export class ScannerService implements OnModuleInit {
         status: 'idle',
       });
     }
+  }
+
+  /**
+   * Procesa el resultado del enrich para UN usuario:
+   *  - score con SUS weights/mode/pumpPct
+   *  - reconcile tracking (per-user)
+   *  - dispatch alerts Telegram (per-user)
+   *  - emit WS update a su room
+   */
+  private async processUser(
+    user: UserEntity,
+    enriched: TokenSnapshot[],
+    btc: { change: number; falling: boolean },
+    nextAt: number,
+  ): Promise<number> {
+    const scored: ScoredToken[] = enriched.map((snapshot) =>
+      this.scoring.score({
+        snapshot,
+        weights: user.weights,
+        mode: user.mode,
+        pumpThreshold: user.thresholds.pumpPct,
+        btc,
+      }),
+    );
+
+    scored.sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score;
+      if (b.passedCount !== a.passedCount) return b.passedCount - a.passedCount;
+      return b.snapshot.change - a.snapshot.change;
+    });
+
+    const newAlerts = this.state.applyUserResults(user.id, scored, nextAt);
+
+    try {
+      await this.tracking.reconcile(user.id, scored);
+    } catch (err) {
+      this.logger.error(`tracking reconcile failed for user ${user.id} (continuing)`, err);
+    }
+
+    this.gateway.emitScanUpdateForUser(user.id, {
+      ranAt: Date.now(),
+      results: scored,
+      newAlerts,
+    });
+
+    for (const alert of newAlerts) {
+      this.gateway.emitAlertForUser(user.id, alert);
+      void this.alerts.dispatch(user.id, alert);
+    }
+
+    return newAlerts.length;
   }
 }

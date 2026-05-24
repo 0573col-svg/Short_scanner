@@ -57,6 +57,23 @@ cp .env.example apps/api/.env
 pnpm dev
 ```
 
+### Workspace de VSCode
+
+Si trabajas en VSCode, abre el workspace para tener backend / frontend / shared-types
+como folders separados con sus propios settings y tareas:
+
+```sh
+code short-scanner.code-workspace
+```
+
+Trae:
+- 5 folders al sidebar (Root, API, Web, shared-types, docker)
+- Tasks pre-configuradas (Cmd+Shift+P → "Tasks: Run Task"): "▶ Dev",
+  "🐳 Docker compose up", "🔨 Build all", "🧪 Test API", "🧹 Lint all"
+- Debug configs para Nest y Jest (F5)
+- ESLint, Prettier, Tailwind IntelliSense por folder
+- Extensiones recomendadas (te las propone al abrir)
+
 Abrir en el navegador:
 
 - **Interfaz web**: <http://localhost:5173> — login mock + badge de salud del API

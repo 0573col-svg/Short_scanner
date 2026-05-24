@@ -14,7 +14,8 @@ import { TradesService } from './trades.service';
 import { TrackingService } from '../tracking/tracking.service';
 import { LearningService } from '../learning/learning.service';
 import { CloseTradeDto } from './dto/close-trade.dto';
-import { DEFAULT_USER_ID } from '../../common/single-user';
+import { CurrentUser } from '../auth/current-user.decorator';
+import type { AuthenticatedUser } from '../auth/auth.types';
 
 @Controller('trades')
 export class TradesController {
@@ -28,28 +29,32 @@ export class TradesController {
   ) {}
 
   @Get()
-  list(): Promise<TradeView[]> {
-    return this.trades.list(DEFAULT_USER_ID);
+  list(@CurrentUser() user: AuthenticatedUser): Promise<TradeView[]> {
+    return this.trades.list(user.id);
   }
 
   @Get(':id')
-  get(@Param('id', ParseUUIDPipe) id: string): Promise<TradeView> {
-    return this.trades.getById(DEFAULT_USER_ID, id);
+  get(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<TradeView> {
+    return this.trades.getById(user.id, id);
   }
 
   @Patch(':id/close')
   async close(
+    @CurrentUser() user: AuthenticatedUser,
     @Param('id', ParseUUIDPipe) id: string,
     @Body() body: CloseTradeDto,
   ): Promise<TradeView> {
-    const trade = await this.trades.close(DEFAULT_USER_ID, id, body.result, body.notes);
+    const trade = await this.trades.close(user.id, id, body.result, body.notes);
     // Sincronizar el tracked token al estado CLOSED
     if (trade.trackedTokenId) {
-      await this.tracking.markClosed(DEFAULT_USER_ID, trade.trackedTokenId);
+      await this.tracking.markClosed(user.id, trade.trackedTokenId);
     }
     // Disparar learning — el próximo scan usará los pesos recalibrados.
     // NO bloqueamos la respuesta: el cierre del trade fue lo que el usuario pidió.
-    void this.learning.recalculate(DEFAULT_USER_ID).catch((err) => {
+    void this.learning.recalculate(user.id).catch((err) => {
       this.logger.error('learning recalculate failed (silent)', err);
     });
     return trade;

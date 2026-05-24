@@ -4,6 +4,8 @@ import { HealthController } from './health.controller';
 import { HealthService } from './health.service';
 import { ScannerStateStore } from '../modules/scanner/scanner.state';
 
+const TEST_USER = '00000000-0000-0000-0000-000000000001';
+
 describe('HealthController', () => {
   let controller: HealthController;
   let store: ScannerStateStore;
@@ -31,13 +33,13 @@ describe('HealthController', () => {
     const res = fakeRes();
     const r = controller.healthz(res);
     expect(r.status).toBe('ok');
-    expect(res._status).toBeUndefined(); // default 200
+    expect(res._status).toBeUndefined();
     expect(r.checks.scannerLastRanAt).toBe(0);
     expect(r.checks.scannerStaleSeconds).toBe(-1);
   });
 
   it('returns ok cuando el scan corrió recientemente', () => {
-    store.applyScanResults([], Date.now() + 120_000); // ranAt = now
+    store.applyUserResults(TEST_USER, [], Date.now() + 120_000);
     const res = fakeRes();
     const r = controller.healthz(res);
     expect(r.status).toBe('ok');
@@ -46,15 +48,12 @@ describe('HealthController', () => {
   });
 
   it('returns degraded + 503 cuando el scan está stale > 5 min', () => {
-    // Simular un scan que corrió hace 7 minutos manipulando el state directamente
-    // (no exponemos un setter de ranAt — usamos el applyScanResults y forzamos)
-    store.applyScanResults([], 0);
-    // Hack para el test: meter ranAt en el pasado
+    store.applyUserResults(TEST_USER, [], 0);
+    // Hack: forzar ranAt en el pasado (atributo privado)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (store as any).state.ranAt = Date.now() - 7 * 60_000;
+    (store as any).ranAt = Date.now() - 7 * 60_000;
 
-    // También bypass del grace period — el HealthService tiene un grace de 60s tras boot
-    // que sumergiría este caso. Forzamos un startedAt viejo.
+    // Forzar startedAt viejo para bypass del grace period
     const svc = new HealthService(store);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (svc as any).startedAt = Date.now() - 5 * 60_000;

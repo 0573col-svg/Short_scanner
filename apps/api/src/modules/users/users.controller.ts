@@ -10,10 +10,11 @@ import {
   Put,
 } from '@nestjs/common';
 import type { UserView } from '@short-scanner/shared-types';
-import { DEFAULT_USER_ID } from '../../common/single-user';
 import { UsersService } from './users.service';
 import { TelegramService } from '../telegram/telegram.service';
 import { SetTelegramDto } from './dto/set-telegram.dto';
+import { CurrentUser } from '../auth/current-user.decorator';
+import type { AuthenticatedUser } from '../auth/auth.types';
 
 @Controller('me')
 export class UsersController {
@@ -25,9 +26,9 @@ export class UsersController {
   ) {}
 
   @Get()
-  async me(): Promise<UserView> {
-    const u = await this.users.getById(DEFAULT_USER_ID);
-    const tg = await this.users.getDecryptedTelegram(DEFAULT_USER_ID);
+  async me(@CurrentUser() user: AuthenticatedUser): Promise<UserView> {
+    const u = await this.users.getById(user.id);
+    const tg = await this.users.getDecryptedTelegram(user.id);
     return {
       id: u.id,
       email: u.email,
@@ -49,8 +50,11 @@ export class UsersController {
   }
 
   @Put('telegram')
-  async setTelegram(@Body() body: SetTelegramDto): Promise<{ ok: true }> {
-    await this.users.setTelegram(DEFAULT_USER_ID, {
+  async setTelegram(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() body: SetTelegramDto,
+  ): Promise<{ ok: true }> {
+    await this.users.setTelegram(user.id, {
       token: body.token,
       chatId: body.chatId,
       nearAlertsEnabled: body.nearAlertsEnabled,
@@ -60,13 +64,31 @@ export class UsersController {
 
   @Delete('telegram')
   @HttpCode(204)
-  async deleteTelegram(): Promise<void> {
-    await this.users.deleteTelegram(DEFAULT_USER_ID);
+  async deleteTelegram(@CurrentUser() user: AuthenticatedUser): Promise<void> {
+    await this.users.deleteTelegram(user.id);
+  }
+
+  /**
+   * One-shot: reasigna los datos del DEFAULT_USER_ID legacy a este usuario.
+   * Útil tras hacer signup por primera vez si venías del modo single-user.
+   * Idempotente: si ya está vacío, devuelve counts=0.
+   */
+  @Post('claim-default')
+  async claimDefault(
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<{
+    trades: number;
+    trackedTokens: { moved: number; merged: number };
+    telegramReassigned: boolean;
+  }> {
+    return this.users.claimDefaultUserData(user.id);
   }
 
   @Post('telegram/test')
-  async testTelegram(): Promise<{ ok: true; messageId?: number }> {
-    const cfg = await this.users.getDecryptedTelegram(DEFAULT_USER_ID);
+  async testTelegram(
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<{ ok: true; messageId?: number }> {
+    const cfg = await this.users.getDecryptedTelegram(user.id);
     if (!cfg) {
       throw new BadRequestException('No hay credenciales de Telegram configuradas');
     }

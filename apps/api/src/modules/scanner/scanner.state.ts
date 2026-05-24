@@ -6,74 +6,122 @@ import type {
   ScanState,
   ScoredToken,
   Thresholds,
+  TokenSnapshot,
 } from '@short-scanner/shared-types';
 import { DEFAULT_THRESHOLDS, DEFAULT_WEIGHTS } from '../scoring/scoring.constants';
 
 /**
- * Estado in-memory del scanner. Single-user, no persistencia (Fase 1).
- * Reemplazable por un repositorio cuando entren los entities de Fase 2.
+ * Estado in-memory del scanner.
+ *
+ * Layout (Sprint 4 — multi-user):
+ *   GLOBAL (shared)         per-user (Map<userId, ...>)
+ *   ───────────────         ───────────────────────────
+ *   enrichedSnapshot[]      lastResults: ScoredToken[]
+ *   btc, ranAt, nextAt      alertedSet: Set<string>
+ *   running
+ *
+ * El enrich (fetch klines + funding) es compartido — se hace UNA vez por scan.
+ * El score, dedup, alertas y reconcile son per-user (cada user tiene sus weights).
  */
+interface PerUserState {
+  results: ScoredToken[];
+  alertedSet: Set<string>;
+}
+
 @Injectable()
 export class ScannerStateStore {
-  private state: ScanState = {
-    ranAt: 0,
-    nextAt: 0,
-    running: false,
-    btc: { change: 0, falling: false },
-    thresholds: { ...DEFAULT_THRESHOLDS },
-    mode: 'STRICT',
-    results: [],
-  };
+  // ── Global ───────────────────────────────────────────
+  private btc: BtcTrend = { change: 0, falling: false };
+  private ranAt = 0;
+  private nextAt = 0;
+  private running = false;
+  /** Snapshot enriquecido sin scorear (compartido) — base para re-score per-user */
+  private enriched: TokenSnapshot[] = [];
 
-  private alertedSet = new Set<string>();
-  private weights = { ...DEFAULT_WEIGHTS };
+  // ── Por usuario ──────────────────────────────────────
+  private perUser = new Map<string, PerUserState>();
 
-  get(): ScanState {
-    return this.state;
+  // ── Cache de mode/thresholds del último scan que se ejecutó por user ─
+  // (Para que GET /scans/current devuelva un ScanState legible incluso si
+  // el user no ha cambiado settings — usa los del User entity como source of truth)
+
+  /** Estado mínimo compartido — usado por healthcheck y el cron */
+  getGlobal(): {
+    ranAt: number;
+    nextAt: number;
+    running: boolean;
+    btc: BtcTrend;
+    enriched: TokenSnapshot[];
+  } {
+    return {
+      ranAt: this.ranAt,
+      nextAt: this.nextAt,
+      running: this.running,
+      btc: this.btc,
+      enriched: this.enriched,
+    };
   }
 
-  getWeights() {
-    return this.weights;
-  }
-
-  setRunning(running: boolean): void {
-    this.state = { ...this.state, running };
-  }
-
-  setBtc(btc: BtcTrend): void {
-    this.state = { ...this.state, btc };
-  }
-
-  setMode(mode: Mode): void {
-    this.state = { ...this.state, mode };
-  }
-
-  setThresholds(thresholds: Partial<Thresholds>): void {
-    this.state = { ...this.state, thresholds: { ...this.state.thresholds, ...thresholds } };
+  /** Para HealthService — solo necesita ranAt */
+  get(): { ranAt: number } {
+    return { ranAt: this.ranAt };
   }
 
   /**
-   * Aplica los resultados de un ciclo. Devuelve las alertas NUEVAS
-   * (verdict GO_SHORT/CERCA que no se hayan reportado en este 4h-block).
+   * Devuelve el ScanState completo para un usuario específico.
+   * Compone: shared (btc, ranAt) + per-user (results) + del User entity (mode, thresholds).
    */
-  applyScanResults(results: ScoredToken[], nextAt: number): ScanAlert[] {
-    const ranAt = Date.now();
-    this.state = { ...this.state, results, ranAt, nextAt };
+  getForUser(userId: string, mode: Mode, thresholds: Thresholds): ScanState {
+    const u = this.perUser.get(userId);
+    return {
+      ranAt: this.ranAt,
+      nextAt: this.nextAt,
+      running: this.running,
+      btc: this.btc,
+      mode,
+      thresholds,
+      results: u?.results ?? [],
+    };
+  }
 
-    const currentBlock = block4h(ranAt);
+  setRunning(running: boolean): void {
+    this.running = running;
+  }
 
-    // Limpiar entradas viejas si el set crece demasiado.
-    // El ID tiene prefijo de verdict ("GO"/"NR") y termina en `${base}_${block}`,
-    // pero el split sería frágil — mejor extraer el block con regex anclado al final.
-    if (this.alertedSet.size > 500) {
+  setBtc(btc: BtcTrend): void {
+    this.btc = btc;
+  }
+
+  /** Llamado tras el enrich shared. Reemplaza el snapshot enriquecido. */
+  setEnriched(snapshot: TokenSnapshot[]): void {
+    this.enriched = snapshot;
+  }
+
+  /**
+   * Aplica los resultados scoreados para UN usuario. Devuelve las alertas
+   * nuevas (verdict GO_SHORT/CERCA que no se hayan reportado en este 4h-block).
+   */
+  applyUserResults(userId: string, results: ScoredToken[], nextAt: number): ScanAlert[] {
+    const now = Date.now();
+    this.ranAt = now;
+    this.nextAt = nextAt;
+
+    const state = this.perUser.get(userId) ?? { results: [], alertedSet: new Set<string>() };
+    state.results = results;
+    this.perUser.set(userId, state);
+
+    const currentBlock = block4h(now);
+
+    // Cleanup del alertedSet si crece demasiado (anclado al final del ID)
+    if (state.alertedSet.size > 500) {
       const filtered = new Set<string>();
-      this.alertedSet.forEach((id) => {
+      state.alertedSet.forEach((id) => {
         const m = /_(\d+)$/.exec(id);
         if (!m) return;
         const block = parseInt(m[1]!, 10);
         if (Number.isFinite(block) && currentBlock - block <= 2) filtered.add(id);
       });
-      this.alertedSet = filtered;
+      state.alertedSet = filtered;
     }
 
     const newAlerts: ScanAlert[] = [];
@@ -81,27 +129,38 @@ export class ScannerStateStore {
       const prefix = r.verdict === 'GO_SHORT' ? 'GO' : r.verdict === 'CERCA' ? 'NR' : null;
       if (!prefix) continue;
       const id = `${prefix}_${r.snapshot.base}_${currentBlock}`;
-      if (!this.alertedSet.has(id)) {
-        this.alertedSet.add(id);
-        newAlerts.push(toAlert(r, ranAt));
+      if (!state.alertedSet.has(id)) {
+        state.alertedSet.add(id);
+        newAlerts.push(toAlert(r, now));
       }
     }
     return newAlerts;
   }
 
-  /** Helper de testing: insertar ids para verificar el cleanup. */
-  _debugSeedAlerts(ids: string[]): void {
-    for (const id of ids) this.alertedSet.add(id);
+  /** Helper de testing */
+  _debugSeedAlerts(userId: string, ids: string[]): void {
+    const state = this.perUser.get(userId) ?? { results: [], alertedSet: new Set<string>() };
+    for (const id of ids) state.alertedSet.add(id);
+    this.perUser.set(userId, state);
   }
 
-  /** Helper de testing: leer ids actuales. */
-  _debugGetAlerts(): Set<string> {
-    return new Set(this.alertedSet);
+  _debugGetAlerts(userId: string): Set<string> {
+    return new Set(this.perUser.get(userId)?.alertedSet ?? []);
   }
-}
 
-function block4h(ms: number): number {
-  return Math.floor(ms / (4 * 3600 * 1000));
+  /** Cuando un usuario se borra (delete account) — liberar memoria */
+  forgetUser(userId: string): void {
+    this.perUser.delete(userId);
+  }
+
+  /** Backward-compat para tests / endpoints legacy que usaban defaults */
+  getWeights() {
+    return { ...DEFAULT_WEIGHTS };
+  }
+
+  getThresholds() {
+    return { ...DEFAULT_THRESHOLDS };
+  }
 }
 
 function toAlert(r: ScoredToken, ts: number): ScanAlert {
@@ -114,4 +173,8 @@ function toAlert(r: ScoredToken, ts: number): ScanAlert {
     rsi: r.snapshot.rsi,
     ts,
   };
+}
+
+function block4h(ms: number): number {
+  return Math.floor(ms / (4 * 3600 * 1000));
 }

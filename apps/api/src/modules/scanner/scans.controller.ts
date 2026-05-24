@@ -1,13 +1,28 @@
-import { Body, ConflictException, Controller, Get, Patch, Post } from '@nestjs/common';
+import {
+  Body,
+  ConflictException,
+  Controller,
+  Get,
+  HttpException,
+  HttpStatus,
+  Patch,
+  Post,
+} from '@nestjs/common';
 import type { ScanState } from '@short-scanner/shared-types';
 import { ScannerStateStore } from './scanner.state';
 import { ScannerService } from './scanner.service';
 import { SettingsPatchDto } from './dto/settings-patch.dto';
 import { UsersService } from '../users/users.service';
-import { DEFAULT_USER_ID } from '../../common/single-user';
+import { CurrentUser } from '../auth/current-user.decorator';
+import type { AuthenticatedUser } from '../auth/auth.types';
+
+/** Rate-limit per-user para /scans/run — 1 invocación cada N ms. */
+const RUN_NOW_COOLDOWN_MS = 60_000;
 
 @Controller('scans')
 export class ScansController {
+  private readonly lastRunByUser = new Map<string, number>();
+
   constructor(
     private readonly state: ScannerStateStore,
     private readonly scanner: ScannerService,
@@ -15,32 +30,51 @@ export class ScansController {
   ) {}
 
   @Get('current')
-  current(): ScanState {
-    return this.state.get();
+  async current(@CurrentUser() user: AuthenticatedUser): Promise<ScanState> {
+    const u = await this.users.getById(user.id);
+    return this.state.getForUser(user.id, u.mode, u.thresholds);
   }
 
   @Patch('settings')
-  async setSettings(@Body() body: SettingsPatchDto): Promise<ScanState> {
-    // Source of truth: User entity (persiste tras restart)
-    await this.users.updateSettings(DEFAULT_USER_ID, body);
-    // Mantener el cache in-memory sincronizado para que el próximo scan los use sin re-fetch
-    if (body.mode) this.state.setMode(body.mode);
-    if (body.thresholds) this.state.setThresholds(body.thresholds);
-    return this.state.get();
+  async setSettings(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() body: SettingsPatchDto,
+  ): Promise<ScanState> {
+    await this.users.updateSettings(user.id, body);
+    const u = await this.users.getById(user.id);
+    return this.state.getForUser(user.id, u.mode, u.thresholds);
   }
 
   @Post('run')
-  async runNow(): Promise<{ ok: true; status: 'launched' }> {
-    // El caso "ya corriendo" se entrega como 409 (ConflictException), NO como
-    // valor de retorno. Por eso el tipo de retorno solo refleja el happy path.
-    if (this.state.get().running) {
+  async runNow(
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<{ ok: true; status: 'launched' }> {
+    // Rate-limit per-user: evita que un usuario martille el endpoint y agote
+    // los rate-limits de Binance. El cron normal sigue corriendo cada 2 min.
+    const now = Date.now();
+    const last = this.lastRunByUser.get(user.id) ?? 0;
+    const remainingMs = last + RUN_NOW_COOLDOWN_MS - now;
+    if (remainingMs > 0) {
+      throw new HttpException(
+        {
+          ok: false,
+          status: 'rate-limited',
+          message: `Espera ${Math.ceil(remainingMs / 1000)}s antes de forzar otro scan`,
+          retryAfterMs: remainingMs,
+        },
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+
+    if (this.state.getGlobal().running) {
       throw new ConflictException({
         ok: false,
         status: 'already-running',
         message: 'Ya hay un scan en progreso. Espera a que termine.',
       });
     }
-    // Fire-and-forget tras la verificación
+
+    this.lastRunByUser.set(user.id, now);
     void this.scanner.runScan();
     return { ok: true, status: 'launched' };
   }
