@@ -115,4 +115,25 @@ export interface ScanAlert {
   change: number;
   rsi: number | null;
   ts: number;
+  // ── Campos extendidos para plantilla rica de Telegram (Fase 1) ──
+  /** Modo activo del usuario al momento del scoring. */
+  mode: Mode;
+  /** Precio último en USD. */
+  price: number;
+  /** Volumen 24h en USD (quoteVolume). */
+  vol: number;
+  /** Funding rate como decimal (0.05 = 5%). null si no estaba disponible. */
+  fundingRate: number | null;
+  /** Velas rojas consecutivas cerradas al final (excluye la vela en curso). */
+  redCount: number;
+  /** % cambio 24h de BTC al momento del scan (informativo, sin checkbox). */
+  btcChange: number;
+  /** Flags passed por indicador — driver de los ✅/⬜ en la plantilla. */
+  passed: {
+    funding: boolean;
+    rsi: boolean;
+    divergence: boolean;
+    redCandles: boolean;
+    liquidity: boolean;
+  };
 }

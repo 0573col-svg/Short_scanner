@@ -100,8 +100,18 @@ export class ScannerStateStore {
   /**
    * Aplica los resultados scoreados para UN usuario. Devuelve las alertas
    * nuevas (verdict GO_SHORT/CERCA que no se hayan reportado en este 4h-block).
+   *
+   * `mode` y `btcChange` se inyectan en cada ScanAlert para que el formatter
+   * de Telegram (Fase 1) pueda mostrar header de modo + línea informativa de BTC
+   * sin requerir lookups adicionales en el processor.
    */
-  applyUserResults(userId: string, results: ScoredToken[], nextAt: number): ScanAlert[] {
+  applyUserResults(
+    userId: string,
+    results: ScoredToken[],
+    nextAt: number,
+    mode: Mode,
+    btcChange: number,
+  ): ScanAlert[] {
     const now = Date.now();
     this.ranAt = now;
     this.nextAt = nextAt;
@@ -131,7 +141,7 @@ export class ScannerStateStore {
       const id = `${prefix}_${r.snapshot.base}_${currentBlock}`;
       if (!state.alertedSet.has(id)) {
         state.alertedSet.add(id);
-        newAlerts.push(toAlert(r, now));
+        newAlerts.push(toAlert(r, now, mode, btcChange));
       }
     }
     return newAlerts;
@@ -163,7 +173,7 @@ export class ScannerStateStore {
   }
 }
 
-function toAlert(r: ScoredToken, ts: number): ScanAlert {
+function toAlert(r: ScoredToken, ts: number, mode: Mode, btcChange: number): ScanAlert {
   return {
     symbol: r.snapshot.symbol,
     base: r.snapshot.base,
@@ -172,6 +182,19 @@ function toAlert(r: ScoredToken, ts: number): ScanAlert {
     change: r.snapshot.change,
     rsi: r.snapshot.rsi,
     ts,
+    mode,
+    price: r.snapshot.price,
+    vol: r.snapshot.vol,
+    fundingRate: r.snapshot.fundingRate,
+    redCount: r.snapshot.redCount,
+    btcChange,
+    passed: {
+      funding: r.grades.funding.passed,
+      rsi: r.grades.rsi.passed,
+      divergence: r.grades.divergence.passed,
+      redCandles: r.grades.redCandles.passed,
+      liquidity: r.grades.liquidity.passed,
+    },
   };
 }
 

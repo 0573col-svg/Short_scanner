@@ -33,17 +33,79 @@ export class TelegramService {
     }
   }
 
-  /** Formato de mensaje de alerta GO_SHORT / CERCA. */
+  /** Formato de mensaje de alerta GO_SHORT / CERCA — plantilla rica (Fase 1). */
   formatAlert(alert: ScanAlert): string {
-    const emoji = alert.verdict === 'GO_SHORT' ? '🔴' : '🟡';
-    const verdictText = alert.verdict === 'GO_SHORT' ? '<b>GO SHORT</b>' : '<i>CERCA</i>';
-    const rsiText = alert.rsi !== null ? `RSI <b>${alert.rsi.toFixed(0)}</b>` : 'RSI —';
-    const changeSign = alert.change >= 0 ? '+' : '';
+    const headerEmoji = alert.verdict === 'GO_SHORT' ? '🔴' : '🔵';
+    const verdictLabel = alert.verdict === 'GO_SHORT' ? 'GO SHORT' : 'CERCA';
+    const modeLabel = alert.mode === 'FLEX' ? 'Flexible' : 'Strict';
+
+    // Minutos hasta el próximo cierre de vela 4H (alineadas a 00,04,08,12,16,20 UTC)
+    const FOUR_H_MS = 4 * 3600 * 1000;
+    const nowMs = Date.now();
+    const nextCloseMs = (Math.floor(nowMs / FOUR_H_MS) + 1) * FOUR_H_MS;
+    const minutesLeft = Math.ceil((nextCloseMs - nowMs) / 60_000);
+
     return [
-      `${emoji} ${verdictText} <b>${alert.base}</b>/USDT`,
+      `${headerEmoji} <b>${verdictLabel}</b> — <b>${esc(alert.base)}</b>`,
+      `⚙️ Modo: ${modeLabel}`,
       ``,
-      `Score <b>${alert.score}</b>  ·  24h <b>${changeSign}${alert.change.toFixed(2)}%</b>  ·  ${rsiText}`,
-      `<i>${new Date(alert.ts).toUTCString()}</i>`,
+      `💰 Precio: $${fmtPrice(alert.price)}`,
+      `📊 24h: ${fmtSignedPct(alert.change, 2)}`,
+      `📊 Score: ${alert.score}/100`,
+      ``,
+      `${checkbox(alert.passed.funding)} Funding: ${fmtFunding(alert.fundingRate)}`,
+      `${checkbox(alert.passed.rsi)} RSI 4h: ${fmtRsi(alert.rsi)}`,
+      `${checkbox(alert.passed.divergence)} Divergencia: ${alert.passed.divergence ? 'sí' : 'no'}`,
+      `${checkbox(alert.passed.redCandles)} Velas rojas: ${alert.redCount} (cerradas)`,
+      `📊 BTC: ${fmtSignedPct(alert.btcChange, 2)}`,
+      `${checkbox(alert.passed.liquidity)} Volumen: ${fmtVol(alert.vol)}`,
+      ``,
+      `⏰ Cierre vela 4H en: ${fmtMinutes(minutesLeft)}`,
     ].join('\n');
   }
+}
+
+// ── Helpers de formato ───────────────────────────────────────────
+
+/** Escape HTML para safe usage con parse_mode=HTML. */
+function esc(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function checkbox(passed: boolean): string {
+  return passed ? '✅' : '⬜';
+}
+
+function fmtSignedPct(n: number, digits: number): string {
+  const sign = n >= 0 ? '+' : '';
+  return `${sign}${n.toFixed(digits)}%`;
+}
+
+function fmtFunding(fr: number | null): string {
+  if (fr === null) return '—';
+  return fmtSignedPct(fr * 100, 3);
+}
+
+function fmtRsi(r: number | null): string {
+  return r === null ? '—' : r.toFixed(0);
+}
+
+function fmtPrice(p: number): string {
+  if (p >= 1) return p.toFixed(4);
+  if (p < 0.001) return p.toExponential(2);
+  return p.toFixed(6);
+}
+
+function fmtVol(v: number): string {
+  if (v >= 1e9) return `${(v / 1e9).toFixed(1)}B`;
+  if (v >= 1e6) return `${(v / 1e6).toFixed(1)}M`;
+  if (v >= 1e3) return `${(v / 1e3).toFixed(1)}K`;
+  return v.toFixed(0);
+}
+
+function fmtMinutes(m: number): string {
+  if (m < 60) return `${m}min`;
+  const h = Math.floor(m / 60);
+  const rem = m % 60;
+  return rem === 0 ? `${h}h` : `${h}h ${rem}min`;
 }

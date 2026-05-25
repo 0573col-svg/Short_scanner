@@ -1,7 +1,9 @@
-import type { ScoredToken, TokenSnapshot, Verdict } from '@short-scanner/shared-types';
+import type { Grade, ScoredToken, TokenSnapshot, Verdict } from '@short-scanner/shared-types';
 import { ScannerStateStore } from './scanner.state';
 
 const TEST_USER = '00000000-0000-0000-0000-000000000001';
+
+const passGrade: Grade = { points: 10, state: 'ok', passed: true };
 
 function scoredToken(verdict: Verdict, base: string, score = 80): ScoredToken {
   const snapshot: TokenSnapshot = {
@@ -21,7 +23,15 @@ function scoredToken(verdict: Verdict, base: string, score = 80): ScoredToken {
     snapshot,
     score,
     verdict,
-    grades: {} as never,
+    grades: {
+      pump: passGrade,
+      funding: passGrade,
+      rsi: passGrade,
+      divergence: passGrade,
+      redCandles: passGrade,
+      btcOk: passGrade,
+      liquidity: passGrade,
+    },
     passedCount: 5,
   };
 }
@@ -33,12 +43,16 @@ describe('ScannerStateStore (multi-user)', () => {
       TEST_USER,
       [scoredToken('GO_SHORT', 'BTC'), scoredToken('CERCA', 'ETH')],
       0,
+      'STRICT',
+      0,
     );
     expect(r1).toHaveLength(2);
 
     const r2 = store.applyUserResults(
       TEST_USER,
       [scoredToken('GO_SHORT', 'BTC'), scoredToken('CERCA', 'ETH')],
+      0,
+      'STRICT',
       0,
     );
     expect(r2).toHaveLength(0); // ya alertados, no re-emitir
@@ -54,7 +68,7 @@ describe('ScannerStateStore (multi-user)', () => {
     for (let i = 0; i < 300; i++) seed.push(`NR_OLD${i}_${veryOldBlock}`);
     store._debugSeedAlerts(TEST_USER, seed);
 
-    const alerts = store.applyUserResults(TEST_USER, [scoredToken('CERCA', 'NEWXRP')], 0);
+    const alerts = store.applyUserResults(TEST_USER, [scoredToken('CERCA', 'NEWXRP')], 0, 'STRICT', 0);
     expect(alerts).toHaveLength(1);
 
     const remaining = store._debugGetAlerts(TEST_USER);
@@ -69,6 +83,8 @@ describe('ScannerStateStore (multi-user)', () => {
       TEST_USER,
       [scoredToken('VIGILAR', 'A'), scoredToken('BTC_DOWN', 'B'), scoredToken('NONE', 'C')],
       0,
+      'STRICT',
+      0,
     );
     expect(alerts).toHaveLength(0);
     expect(store._debugGetAlerts(TEST_USER).size).toBe(0);
@@ -79,21 +95,21 @@ describe('ScannerStateStore (multi-user)', () => {
     const userA = '00000000-0000-0000-0000-00000000000A';
     const userB = '00000000-0000-0000-0000-00000000000B';
 
-    const alertsA = store.applyUserResults(userA, [scoredToken('GO_SHORT', 'BTC')], 0);
+    const alertsA = store.applyUserResults(userA, [scoredToken('GO_SHORT', 'BTC')], 0, 'STRICT', 0);
     expect(alertsA).toHaveLength(1);
 
     // Mismo token, otro user → SÍ debe alertar (sets independientes)
-    const alertsB = store.applyUserResults(userB, [scoredToken('GO_SHORT', 'BTC')], 0);
+    const alertsB = store.applyUserResults(userB, [scoredToken('GO_SHORT', 'BTC')], 0, 'STRICT', 0);
     expect(alertsB).toHaveLength(1);
 
     // Re-emit para A → ya alertado
-    const alertsAAgain = store.applyUserResults(userA, [scoredToken('GO_SHORT', 'BTC')], 0);
+    const alertsAAgain = store.applyUserResults(userA, [scoredToken('GO_SHORT', 'BTC')], 0, 'STRICT', 0);
     expect(alertsAAgain).toHaveLength(0);
   });
 
   it('forgetUser limpia el state de ese user', () => {
     const store = new ScannerStateStore();
-    store.applyUserResults(TEST_USER, [scoredToken('GO_SHORT', 'BTC')], 0);
+    store.applyUserResults(TEST_USER, [scoredToken('GO_SHORT', 'BTC')], 0, 'STRICT', 0);
     expect(store._debugGetAlerts(TEST_USER).size).toBe(1);
     store.forgetUser(TEST_USER);
     expect(store._debugGetAlerts(TEST_USER).size).toBe(0);
