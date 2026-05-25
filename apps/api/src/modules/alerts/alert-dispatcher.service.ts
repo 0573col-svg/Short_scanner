@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -19,10 +20,16 @@ export class AlertDispatcher {
   ) {}
 
   async dispatch(userId: string, alert: ScanAlert): Promise<void> {
+    // UUID pre-generado client-side: el insert es fire-and-forget pero igual
+    // necesitamos el id sincrónicamente para pasarlo en el payload de BullMQ
+    // (el processor lo usa para excluir esta alerta de "Otros del día" — Fase 3).
+    const currentAlertId = randomUUID();
+
     // 1. Persistir SIEMPRE — fire-and-forget. Si la BD falla, se loguea pero NO
     //    bloquea el envío a Telegram. La alerta vive en BD aunque el bot esté caído.
     this.alertsRepo
       .insert({
+        id: currentAlertId,
         userId,
         symbol: alert.symbol,
         base: alert.base,
@@ -53,7 +60,7 @@ export class AlertDispatcher {
     try {
       await this.queue.add(
         'telegram',
-        { userId, alert },
+        { userId, alert, currentAlertId },
         {
           jobId,
           attempts: 3,

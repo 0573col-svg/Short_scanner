@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import axios, { AxiosError, AxiosInstance } from 'axios';
-import type { ScanAlert } from '@short-scanner/shared-types';
+import type { OtherTodayAlert, ScanAlert } from '@short-scanner/shared-types';
 
 @Injectable()
 export class TelegramService {
@@ -33,8 +33,12 @@ export class TelegramService {
     }
   }
 
-  /** Formato de mensaje de alerta GO_SHORT / CERCA — plantilla rica (Fase 1). */
-  formatAlert(alert: ScanAlert): string {
+  /**
+   * Formato de mensaje de alerta GO_SHORT / CERCA.
+   * - Plantilla base: Fase 1 (header + indicadores + cierre 4H).
+   * - `othersToday`: si tiene items, se agrega la sección "Otros del día" al final (Fase 3).
+   */
+  formatAlert(alert: ScanAlert, othersToday: OtherTodayAlert[] = []): string {
     const headerEmoji = alert.verdict === 'GO_SHORT' ? '🔴' : '🔵';
     const verdictLabel = alert.verdict === 'GO_SHORT' ? 'GO SHORT' : 'CERCA';
     const modeLabel = alert.mode === 'FLEX' ? 'Flexible' : 'Strict';
@@ -45,7 +49,7 @@ export class TelegramService {
     const nextCloseMs = (Math.floor(nowMs / FOUR_H_MS) + 1) * FOUR_H_MS;
     const minutesLeft = Math.ceil((nextCloseMs - nowMs) / 60_000);
 
-    return [
+    const lines: string[] = [
       `${headerEmoji} <b>${verdictLabel}</b> — <b>${esc(alert.base)}</b>`,
       `⚙️ Modo: ${modeLabel}`,
       ``,
@@ -61,7 +65,22 @@ export class TelegramService {
       `${checkbox(alert.passed.liquidity)} Volumen: ${fmtVol(alert.vol)}`,
       ``,
       `⏰ Cierre vela 4H en: ${fmtMinutes(minutesLeft)}`,
-    ].join('\n');
+    ];
+
+    // Fase 3: agregar "Otros del día" si hay items. Si está vacío, NO renderizar
+    // la sección (decisión de diseño — un "Sin otras alertas hoy" se ve raro).
+    if (othersToday.length > 0) {
+      lines.push('');
+      lines.push('📋 Otros del día:');
+      for (const o of othersToday) {
+        const tag = o.verdict === 'GO_SHORT' ? '[GO SHORT]' : '[CERCA]';
+        lines.push(
+          `  • ${esc(o.base)} ${tag} ${fmtSignedPct(o.change, 1)} (${fmtAgo(o.ts)}, score ${o.score})`,
+        );
+      }
+    }
+
+    return lines.join('\n');
   }
 }
 
@@ -108,4 +127,13 @@ function fmtMinutes(m: number): string {
   const h = Math.floor(m / 60);
   const rem = m % 60;
   return rem === 0 ? `${h}h` : `${h}h ${rem}min`;
+}
+
+/** "recién" / "hace Xmin" / "hace Xh" — usado en la sección "Otros del día". */
+function fmtAgo(tsMs: number, nowMs: number = Date.now()): string {
+  const diffMin = Math.floor((nowMs - tsMs) / 60_000);
+  if (diffMin < 1) return 'recién';
+  if (diffMin < 60) return `hace ${diffMin}min`;
+  const diffH = Math.floor(diffMin / 60);
+  return `hace ${diffH}h`;
 }

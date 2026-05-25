@@ -107,6 +107,19 @@ export interface ScanState {
   results: ScoredToken[];
 }
 
+/**
+ * Resumen mínimo de una alerta histórica del día, usado para renderizar la
+ * sección "Otros del día" en el mensaje de Telegram (Fase 3).
+ */
+export interface OtherTodayAlert {
+  base: string;
+  verdict: Verdict;
+  change: number;
+  score: number;
+  /** Epoch ms del momento del scan que generó la alerta. */
+  ts: number;
+}
+
 export interface ScanAlert {
   symbol: string;
   base: string;
