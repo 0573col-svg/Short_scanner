@@ -217,4 +217,39 @@ export class ScannerService implements OnModuleInit {
 
     return newAlerts.length;
   }
+
+  /**
+   * Score on-demand para UN usuario usando el ÚLTIMO enriched snapshot que ya
+   * está cacheado en memoria. NO toca Binance ni emite alertas — solo puebla
+   * `state.perUser[userId].results` para que la UI tenga algo que mostrar
+   * inmediatamente al conectarse, sin esperar al próximo cron.
+   *
+   * Útil cuando un user nuevo se loguea, o se reconecta tras estar offline.
+   * Devuelve true si pudo scorear, false si no había snapshot cacheado.
+   */
+  async scoreUserFromCache(userId: string): Promise<boolean> {
+    const global = this.state.getGlobal();
+    if (global.enriched.length === 0) {
+      // No hay snapshot — el primer scan aún no terminó
+      return false;
+    }
+    const user = await this.users.getById(userId);
+    const scored: ScoredToken[] = global.enriched.map((snapshot) =>
+      this.scoring.score({
+        snapshot,
+        weights: user.weights,
+        mode: user.mode,
+        pumpThreshold: user.thresholds.pumpPct,
+        btc: global.btc,
+      }),
+    );
+    scored.sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score;
+      if (b.passedCount !== a.passedCount) return b.passedCount - a.passedCount;
+      return b.snapshot.change - a.snapshot.change;
+    });
+    // No genera alertas — el dedup ya fue aplicado en el scan original
+    this.state.applyUserResults(userId, scored, global.nextAt);
+    return true;
+  }
 }

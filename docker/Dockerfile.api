@@ -1,0 +1,52 @@
+# ═══════════════════════════════════════════════════════════════
+# Dockerfile producción — API NestJS
+# Build context esperado: raíz del monorepo (Short_scanner/)
+# Multi-stage para imagen final ~150MB
+# ═══════════════════════════════════════════════════════════════
+
+# ─── Stage 1: instalar TODAS las deps (incluye dev para el build) ──
+FROM node:20-alpine AS deps
+WORKDIR /repo
+RUN corepack enable && corepack prepare pnpm@10.30.0 --activate
+COPY pnpm-workspace.yaml pnpm-lock.yaml package.json turbo.json tsconfig.base.json ./
+COPY packages/shared-types/package.json ./packages/shared-types/
+COPY apps/api/package.json ./apps/api/
+RUN pnpm install --frozen-lockfile
+
+# ─── Stage 2: build shared-types + api ───────────────────────────
+FROM deps AS builder
+COPY packages/shared-types ./packages/shared-types
+COPY apps/api ./apps/api
+RUN pnpm --filter @short-scanner/shared-types build
+RUN pnpm --filter @short-scanner/api build
+
+# ─── Stage 3: prod deps only ─────────────────────────────────────
+FROM node:20-alpine AS prod-deps
+WORKDIR /repo
+RUN corepack enable && corepack prepare pnpm@10.30.0 --activate
+COPY pnpm-workspace.yaml pnpm-lock.yaml package.json ./
+COPY packages/shared-types/package.json ./packages/shared-types/
+COPY apps/api/package.json ./apps/api/
+RUN pnpm install --frozen-lockfile --prod
+
+# ─── Stage 4: runtime mínima ─────────────────────────────────────
+FROM node:20-alpine AS runner
+WORKDIR /app
+ENV NODE_ENV=production
+ENV PORT=3000
+
+# Copiar solo lo estrictamente necesario
+COPY --from=builder /repo/packages/shared-types/dist ./packages/shared-types/dist
+COPY --from=builder /repo/packages/shared-types/package.json ./packages/shared-types/
+COPY --from=builder /repo/apps/api/dist ./apps/api/dist
+COPY --from=builder /repo/apps/api/package.json ./apps/api/
+COPY --from=prod-deps /repo/node_modules ./node_modules
+COPY --from=prod-deps /repo/apps/api/node_modules ./apps/api/node_modules
+COPY --from=prod-deps /repo/packages/shared-types/node_modules ./packages/shared-types/node_modules 2>/dev/null || true
+
+# Healthcheck — Dokploy lo respeta para readiness
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+  CMD wget -qO- http://localhost:3000/api/healthz || exit 1
+
+EXPOSE 3000
+CMD ["node", "apps/api/dist/main.js"]

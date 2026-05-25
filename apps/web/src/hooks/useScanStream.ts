@@ -36,6 +36,14 @@ export function useScanStream(): ScanStream {
     const onStatus = (s: ScanState) => setState(s);
     const onUpdate = (u: ScanUpdatePayload) => {
       setLastUpdate(u);
+      // Mergear los results y ranAt al state actual. SIN esto la tabla
+      // no se actualiza tras el primer scan:status — los datos llegan pero se ignoran.
+      // Preservamos mode/thresholds/btc del state previo (vienen solo en scan:status).
+      setState((prev) =>
+        prev
+          ? { ...prev, ranAt: u.ranAt, results: u.results }
+          : prev,
+      );
       // Marcar como flash los símbolos con alertas nuevas
       if (u.newAlerts.length > 0) {
         setFlashSet((prev) => {

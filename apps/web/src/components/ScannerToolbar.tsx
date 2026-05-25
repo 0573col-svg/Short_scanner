@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { Mode, ScanState, Thresholds } from '@short-scanner/shared-types';
 
 interface Props {
@@ -7,46 +7,74 @@ interface Props {
   onRunNow: () => void;
 }
 
+/**
+ * Inputs CONTROLADOS sincronizados con el prop state (que viene del WebSocket).
+ * Si otra pestaña/usuario actualiza los thresholds, esta UI los refleja sin
+ * tener que recargar.
+ */
 export function ScannerToolbar({ state, onChange, onRunNow }: Props) {
   const [busy, setBusy] = useState(false);
+  const [pumpPct, setPumpPct] = useState(String(state.thresholds.pumpPct));
+  const [topN, setTopN] = useState(String(state.thresholds.topN));
+  const [minVolUsd, setMinVolUsd] = useState(String(state.thresholds.minVolUsd));
+
+  // Sync inputs cuando state.thresholds cambia (cross-tab, claim-default, etc.)
+  useEffect(() => {
+    setPumpPct(String(state.thresholds.pumpPct));
+  }, [state.thresholds.pumpPct]);
+  useEffect(() => {
+    setTopN(String(state.thresholds.topN));
+  }, [state.thresholds.topN]);
+  useEffect(() => {
+    setMinVolUsd(String(state.thresholds.minVolUsd));
+  }, [state.thresholds.minVolUsd]);
 
   return (
     <div className="rounded-lg border border-line bg-bg-2 p-4 flex flex-wrap items-end gap-4">
       <Field label="Pump %">
         <input
           type="number"
-          defaultValue={state.thresholds.pumpPct}
+          value={pumpPct}
+          onChange={(e) => setPumpPct(e.target.value)}
           min={1}
           className="w-20 bg-bg-3 border border-line rounded px-2 py-1 font-mono text-sm focus:outline-none focus:border-accent-amber"
           onBlur={(e) => {
             const v = parseFloat(e.target.value);
-            if (Number.isFinite(v) && v > 0) onChange({ thresholds: { pumpPct: v } });
+            if (Number.isFinite(v) && v > 0 && v !== state.thresholds.pumpPct) {
+              onChange({ thresholds: { pumpPct: v } });
+            }
           }}
         />
       </Field>
       <Field label="Top N">
         <input
           type="number"
-          defaultValue={state.thresholds.topN}
+          value={topN}
+          onChange={(e) => setTopN(e.target.value)}
           min={1}
           max={200}
           className="w-20 bg-bg-3 border border-line rounded px-2 py-1 font-mono text-sm focus:outline-none focus:border-accent-amber"
           onBlur={(e) => {
             const v = parseInt(e.target.value, 10);
-            if (Number.isFinite(v) && v > 0) onChange({ thresholds: { topN: v } });
+            if (Number.isFinite(v) && v > 0 && v !== state.thresholds.topN) {
+              onChange({ thresholds: { topN: v } });
+            }
           }}
         />
       </Field>
       <Field label="Vol min USD">
         <input
           type="number"
-          defaultValue={state.thresholds.minVolUsd}
+          value={minVolUsd}
+          onChange={(e) => setMinVolUsd(e.target.value)}
           min={0}
           step={100000}
           className="w-32 bg-bg-3 border border-line rounded px-2 py-1 font-mono text-sm focus:outline-none focus:border-accent-amber"
           onBlur={(e) => {
             const v = parseFloat(e.target.value);
-            if (Number.isFinite(v) && v >= 0) onChange({ thresholds: { minVolUsd: v } });
+            if (Number.isFinite(v) && v >= 0 && v !== state.thresholds.minVolUsd) {
+              onChange({ thresholds: { minVolUsd: v } });
+            }
           }}
         />
       </Field>

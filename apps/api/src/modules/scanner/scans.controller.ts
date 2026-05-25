@@ -32,7 +32,13 @@ export class ScansController {
   @Get('current')
   async current(@CurrentUser() user: AuthenticatedUser): Promise<ScanState> {
     const u = await this.users.getById(user.id);
-    return this.state.getForUser(user.id, u.mode, u.thresholds);
+    let state = this.state.getForUser(user.id, u.mode, u.thresholds);
+    // Score on-demand si el user no tiene results pero hay snapshot cacheado.
+    if (state.results.length === 0) {
+      const populated = await this.scanner.scoreUserFromCache(user.id);
+      if (populated) state = this.state.getForUser(user.id, u.mode, u.thresholds);
+    }
+    return state;
   }
 
   @Patch('settings')

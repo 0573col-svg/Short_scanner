@@ -1,6 +1,7 @@
-import { Logger, UnauthorizedException } from '@nestjs/common';
+import { Inject, Logger, UnauthorizedException, forwardRef } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
+import { ScannerService } from './scanner.service';
 import {
   OnGatewayConnection,
   OnGatewayDisconnect,
@@ -52,6 +53,8 @@ export class ScansGateway implements OnGatewayConnection, OnGatewayDisconnect {
     private readonly users: UsersService,
     private readonly jwt: JwtService,
     private readonly cfg: ConfigService,
+    @Inject(forwardRef(() => ScannerService))
+    private readonly scanner: ScannerService,
   ) {}
 
   /**
@@ -75,9 +78,9 @@ export class ScansGateway implements OnGatewayConnection, OnGatewayDisconnect {
       await client.join(`user:${payload.sub}`);
       this.logger.debug(`client connected: ${client.id} (user ${payload.email})`);
 
-      // Push del estado actual del user inmediatamente
-      const u = await this.users.getById(payload.sub);
-      client.emit('scan:status', this.state.getForUser(payload.sub, u.mode, u.thresholds));
+      // Push del estado actual al cliente con fallback de score-from-cache
+      const state = await this.buildUserState(payload.sub);
+      client.emit('scan:status', state);
     } catch (err) {
       this.logger.warn(`WS auth rejected: ${err instanceof Error ? err.message : err}`);
       client.emit('scan:auth-error', { message: 'No autorizado' });
@@ -94,8 +97,26 @@ export class ScansGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @SubscribeMessage('scan:subscribe')
   async handleSubscribe(client: AuthSocket): Promise<void> {
     if (!client.data?.userId) return;
-    const u = await this.users.getById(client.data.userId);
-    client.emit('scan:status', this.state.getForUser(client.data.userId, u.mode, u.thresholds));
+    // MISMO fallback que handleConnection — sin esto, si scan:subscribe llega
+    // después del primer emit y aún no hay results del user, pisa el state
+    // hidratado con uno vacío.
+    const state = await this.buildUserState(client.data.userId);
+    client.emit('scan:status', state);
+  }
+
+  /**
+   * Construye el ScanState del usuario, con fallback de score-from-cache
+   * si su PerUserState está vacío pero ya hay snapshot enriched cacheado.
+   * Evita que la UI quede esperando 2 min al cron tras login/reconexión.
+   */
+  private async buildUserState(userId: string) {
+    const u = await this.users.getById(userId);
+    let state = this.state.getForUser(userId, u.mode, u.thresholds);
+    if (state.results.length === 0) {
+      const populated = await this.scanner.scoreUserFromCache(userId);
+      if (populated) state = this.state.getForUser(userId, u.mode, u.thresholds);
+    }
+    return state;
   }
 
   /** Emit scan update solo a la room de UN usuario */
