@@ -1,8 +1,11 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
+import { InjectRepository } from '@nestjs/typeorm';
 import { Queue } from 'bullmq';
+import { Repository } from 'typeorm';
 import type { ScanAlert } from '@short-scanner/shared-types';
 import { ALERTS_QUEUE, type TelegramJobData } from './alerts.queue';
+import { AlertEntity } from './alert.entity';
 
 @Injectable()
 export class AlertDispatcher {
@@ -11,10 +14,40 @@ export class AlertDispatcher {
   constructor(
     @InjectQueue(ALERTS_QUEUE)
     private readonly queue: Queue<TelegramJobData>,
+    @InjectRepository(AlertEntity)
+    private readonly alertsRepo: Repository<AlertEntity>,
   ) {}
 
   async dispatch(userId: string, alert: ScanAlert): Promise<void> {
-    // jobId determinístico por (user, symbol, block, verdict) para dedupe natural
+    // 1. Persistir SIEMPRE — fire-and-forget. Si la BD falla, se loguea pero NO
+    //    bloquea el envío a Telegram. La alerta vive en BD aunque el bot esté caído.
+    this.alertsRepo
+      .insert({
+        userId,
+        symbol: alert.symbol,
+        base: alert.base,
+        verdict: alert.verdict,
+        mode: alert.mode,
+        score: alert.score,
+        change: alert.change,
+        rsi: alert.rsi,
+        price: alert.price,
+        vol: alert.vol,
+        fundingRate: alert.fundingRate,
+        redCount: alert.redCount,
+        btcChange: alert.btcChange,
+        passed: alert.passed,
+        ts: new Date(alert.ts),
+      })
+      .catch((err) => {
+        this.logger.error(
+          `failed to persist alert (user=${userId} base=${alert.base}); continuing with dispatch`,
+          err,
+        );
+      });
+
+    // 2. Encolar para envío a Telegram. jobId determinístico por
+    //    (user, symbol, block, verdict) para dedupe natural en BullMQ.
     const block4h = Math.floor(alert.ts / (4 * 3600 * 1000));
     const jobId = `tg_${userId}_${alert.symbol}_${alert.verdict}_${block4h}`;
     try {
