@@ -41,13 +41,21 @@ function scored(change: number, symbol = 'XYZUSDT'): ScoredToken {
  * Mock de DataSource cuyo `transaction(cb)` ejecuta el callback inmediatamente
  * con un manager que devuelve `repo` para cualquier entity solicitada.
  */
-function makeService(repo: Record<string, jest.Mock>) {
+function makeService(repo: Record<string, jest.Mock>, overrides: { maturedWindowMs?: number } = {}) {
   const manager = { getRepository: jest.fn().mockReturnValue(repo) };
   const dataSource = {
     transaction: jest.fn().mockImplementation(async (cb: (mgr: typeof manager) => Promise<unknown>) => cb(manager)),
   };
+  const cfg = {
+    get: jest.fn().mockImplementation((key: string, def: number) => {
+      if (key === 'MATURED_WINDOW_MS' && overrides.maturedWindowMs !== undefined) {
+        return overrides.maturedWindowMs;
+      }
+      return def;
+    }),
+  };
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const svc = new TrackingService(repo as any, dataSource as any);
+  const svc = new TrackingService(repo as any, dataSource as any, cfg as any);
   return svc;
 }
 
@@ -174,5 +182,144 @@ describe('TrackingService.reconcile — filtro de entrada >=50%', () => {
     expect(repo.create.mock.calls[0][0].symbol).toBe('NEWBUSDT');
     // 2 save (NEWB create + OLDC update)
     expect(repo.save).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('TrackingService.reconcile — integración matured-verdict (Fase 5)', () => {
+  const USER_ID = '00000000-0000-0000-0000-000000000001';
+
+  it('token NUEVO con grade.passed=true persiste su Ever-flag desde el primer scan', async () => {
+    const repo = baseRepo();
+    const svc = makeService(repo);
+
+    // El scored helper devuelve grades con funding/divergence/redCandles/btcOk/liquidity passed=true.
+    await svc.reconcile(USER_ID, [scored(60)]);
+
+    expect(repo.create).toHaveBeenCalledTimes(1);
+    const created = repo.create.mock.calls[0][0];
+    expect(created.fundingEverPassed).toBe(true);
+    expect(created.divergenceEverPassed).toBe(true);
+    expect(created.redCandlesEverPassed).toBe(true);
+    // RSI passed=false en el helper → flag queda apagada
+    expect(created.rsiEverPassed).toBe(false);
+    expect(created.activeMs).toBe(0); // no se incrementa en el primer scan
+    expect(created.maturedVerdict).toBeNull(); // imposible madurar en scan 1
+  });
+
+  it('token EXISTENTE: incrementa activeMs y prende Ever-flag faltante en el segundo scan', async () => {
+    const lastScanAt = new Date(Date.now() - 120_000); // 2 min atrás
+    const existing: Partial<TrackedTokenEntity> = {
+      id: 'existing-1',
+      userId: USER_ID,
+      symbol: 'XYZUSDT',
+      base: 'XYZ',
+      status: 'ACTIVE',
+      firstDetectedAt: new Date(Date.now() - 24 * 3600 * 1000),
+      lastSeenPumpingAt: lastScanAt,
+      peakScore: 70,
+      peakRsi: 78,
+      peakChange24h: 85,
+      peakPrice: 0.6,
+      peakAt: new Date(),
+      scansActive: 5,
+      reappearances: 0,
+      activeMs: 600_000, // 10 minutos previos acumulados
+      rsiEverPassed: false, // todavía no había llegado a RSI passed
+      rsiPassedAt: null,
+      fundingEverPassed: true,
+      fundingPassedAt: new Date(Date.now() - 6 * 60 * 1000),
+      divergenceEverPassed: false,
+      divergencePassedAt: null,
+      redCandlesEverPassed: false,
+      redCandlesPassedAt: null,
+      maturedVerdict: null,
+      maturedAt: null,
+    };
+    const repo = baseRepo();
+    repo.findOne.mockResolvedValueOnce(existing);
+    const svc = makeService(repo);
+
+    // El helper genera grades con funding/divergence/redCandles passed=true. RSI sigue passed=false.
+    await svc.reconcile(USER_ID, [scored(60)]);
+
+    expect(repo.save).toHaveBeenCalledTimes(1);
+    const saved = repo.save.mock.calls[0][0];
+    // activeMs incrementó por el delta ~120000 (con cierta tolerancia por Date.now())
+    expect(saved.activeMs).toBeGreaterThanOrEqual(600_000 + 119_000);
+    expect(saved.activeMs).toBeLessThanOrEqual(600_000 + 121_000);
+    // divergence y redCandles que estaban apagadas se prendieron
+    expect(saved.divergenceEverPassed).toBe(true);
+    expect(saved.redCandlesEverPassed).toBe(true);
+    // funding que ya estaba prendida no cambia su timestamp
+    expect(saved.fundingEverPassed).toBe(true);
+    // rsi sigue apagada (el helper genera rsi.passed=false)
+    expect(saved.rsiEverPassed).toBe(false);
+    // currentPrice se popula
+    expect(saved.currentPrice).toBe(0.5);
+  });
+
+  it('archive por window: token con activeMs>window y maturedAt=null pasa a ARCHIVED', async () => {
+    const windowMs = 1_000_000; // window chico para testear
+    const expired: Partial<TrackedTokenEntity> = {
+      id: 'expired-1',
+      userId: USER_ID,
+      symbol: 'OLDUSDT',
+      base: 'OLD',
+      status: 'ACTIVE',
+      activeMs: windowMs + 50_000,
+      maturedAt: null,
+      lastSeenPumpingAt: new Date(),
+    };
+    const repo = baseRepo();
+    // Hay 3 calls a `find`:
+    //  1) previouslyActive (ACTIVE) — vacío
+    //  2) windowExpiredRows — devuelve `expired`
+    //  3) stale DORMANT — vacío
+    repo.find
+      .mockResolvedValueOnce([]) // previouslyActive
+      .mockResolvedValueOnce([expired]) // windowExpiredRows
+      .mockResolvedValueOnce([]); // stale
+    const svc = makeService(repo, { maturedWindowMs: windowMs });
+
+    const result = await svc.reconcile(USER_ID, []);
+
+    expect(result.windowExpired).toBe(1);
+    // El update llamado con status=ARCHIVED para el token expired
+    expect(repo.update).toHaveBeenCalledWith(
+      'expired-1',
+      expect.objectContaining({ status: 'ARCHIVED' }),
+    );
+  });
+
+  it('archive por window: token YA maduro con activeMs>window NO se archiva', async () => {
+    const windowMs = 1_000_000;
+    // Token que ya maduró antes — quedó con maturedAt set. La query principal
+    // ya lo filtra (IsNull en maturedAt), pero el doble check de
+    // shouldExpireByWindow lo descarta también si llegara por error.
+    const matureLongAgo: Partial<TrackedTokenEntity> = {
+      id: 'mature-1',
+      userId: USER_ID,
+      symbol: 'MATUSDT',
+      base: 'MAT',
+      status: 'ACTIVE',
+      activeMs: windowMs + 1_000_000,
+      maturedAt: new Date(),
+      lastSeenPumpingAt: new Date(),
+    };
+    const repo = baseRepo();
+    repo.find
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([matureLongAgo]) // erróneamente devuelto
+      .mockResolvedValueOnce([]);
+    const svc = makeService(repo, { maturedWindowMs: windowMs });
+
+    const result = await svc.reconcile(USER_ID, []);
+
+    // El doble check de shouldExpireByWindow lo filtra
+    expect(result.windowExpired).toBe(0);
+    expect(repo.update).not.toHaveBeenCalledWith(
+      'mature-1',
+      expect.objectContaining({ status: 'ARCHIVED' }),
+    );
   });
 });
