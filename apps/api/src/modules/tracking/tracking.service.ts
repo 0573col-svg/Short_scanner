@@ -11,6 +11,9 @@ import { TrackedTokenEntity } from './tracked-token.entity';
 /** Tras N horas en DORMANT sin reaparecer → ARCHIVED. */
 const DORMANT_TTL_HOURS = 24;
 
+/** Filtro mínimo de pump para que un token NUEVO entre al tracking (Fase 4). */
+const TRACKING_ENTRY_MIN_CHANGE_PCT = 50;
+
 @Injectable()
 export class TrackingService {
   private readonly logger = new Logger(TrackingService.name);
@@ -55,6 +58,13 @@ export class TrackingService {
         const existing = await repo.findOne({
           where: { userId, symbol: r.snapshot.symbol, status: Not(In(['ARCHIVED', 'CLOSED'])) },
         });
+
+        // Filtro de entrada (Fase 4): tokens nuevos solo se persisten si
+        // change24h >= 50%. Existentes siguen actualizándose hasta morir por
+        // DORMANT TTL — no los desalojamos retroactivamente.
+        if (!existing && r.snapshot.change < TRACKING_ENTRY_MIN_CHANGE_PCT) {
+          continue;
+        }
 
         if (!existing) {
           await repo.save(
@@ -208,6 +218,19 @@ function toView(t: TrackedTokenEntity): TrackedTokenView {
     currentVerdict: t.currentVerdict,
     currentGrades: t.currentGrades,
     tradeId: t.tradeId,
+    rsiEverPassed: t.rsiEverPassed,
+    rsiPassedAt: t.rsiPassedAt ? t.rsiPassedAt.toISOString() : null,
+    fundingEverPassed: t.fundingEverPassed,
+    fundingPassedAt: t.fundingPassedAt ? t.fundingPassedAt.toISOString() : null,
+    divergenceEverPassed: t.divergenceEverPassed,
+    divergencePassedAt: t.divergencePassedAt ? t.divergencePassedAt.toISOString() : null,
+    redCandlesEverPassed: t.redCandlesEverPassed,
+    redCandlesPassedAt: t.redCandlesPassedAt ? t.redCandlesPassedAt.toISOString() : null,
+    maturedVerdict: t.maturedVerdict,
+    maturedAt: t.maturedAt ? t.maturedAt.toISOString() : null,
+    maturedAlertedAt: t.maturedAlertedAt ? t.maturedAlertedAt.toISOString() : null,
+    currentPrice: t.currentPrice,
+    activeMs: t.activeMs,
   };
 }
 
