@@ -199,7 +199,7 @@ export class ScannerService implements OnModuleInit {
     const newAlerts = this.state.applyUserResults(user.id, scored, nextAt, user.mode, btc.change);
 
     try {
-      await this.tracking.reconcile(user.id, scored);
+      await this.tracking.reconcile(user.id, scored, user.mode, btc.change);
     } catch (err) {
       this.logger.error(`tracking reconcile failed for user ${user.id} (continuing)`, err);
     }

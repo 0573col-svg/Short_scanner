@@ -1,10 +1,9 @@
-import type { ScanAlert } from '@short-scanner/shared-types';
+import type { MaturedAlert, ScanAlert } from '@short-scanner/shared-types';
 
 export const ALERTS_QUEUE = 'alerts';
 
-export interface TelegramJobData {
+interface TelegramJobBase {
   userId: string;
-  alert: ScanAlert;
   /**
    * UUID de la fila recién persistida en `alerts` (Fase 3). Permite al processor
    * excluirla de la query "Otros del día" para no listar la alerta actual.
@@ -15,3 +14,16 @@ export interface TelegramJobData {
    */
   currentAlertId?: string;
 }
+
+export interface InstantTelegramJobData extends TelegramJobBase {
+  /** `kind` opcional para retro-compat con jobs encolados antes de Fase 6. */
+  kind?: 'INSTANT';
+  alert: ScanAlert;
+}
+
+export interface MaturedTelegramJobData extends TelegramJobBase {
+  kind: 'MATURED';
+  alert: MaturedAlert;
+}
+
+export type TelegramJobData = InstantTelegramJobData | MaturedTelegramJobData;

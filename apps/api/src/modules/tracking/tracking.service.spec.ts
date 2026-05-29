@@ -54,9 +54,13 @@ function makeService(repo: Record<string, jest.Mock>, overrides: { maturedWindow
       return def;
     }),
   };
+  const dispatcher = {
+    dispatch: jest.fn().mockResolvedValue(undefined),
+    dispatchMatured: jest.fn().mockResolvedValue(undefined),
+  };
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const svc = new TrackingService(repo as any, dataSource as any, cfg as any);
-  return svc;
+  const svc = new TrackingService(repo as any, dataSource as any, cfg as any, dispatcher as any);
+  return Object.assign(svc, { __dispatcher: dispatcher });
 }
 
 /** Repo mock con defaults vacíos — los tests sobrescriben lo que necesiten. */
@@ -289,6 +293,109 @@ describe('TrackingService.reconcile — integración matured-verdict (Fase 5)', 
       'expired-1',
       expect.objectContaining({ status: 'ARCHIVED' }),
     );
+  });
+
+  it('transición null→GO_SHORT dispara dispatchMatured y persiste maturedAlertedAt', async () => {
+    // Token con 3 Ever-flags ya prendidas + activeMs alto pero <window.
+    // El scan trae el grade.redCandles passed=true → 4ta flag se prende →
+    // applyMaturedVerdict marca GO_SHORT → reconcile detecta transición.
+    const windowMs = 300_000;
+    const lastScanAt = new Date(Date.now() - 120_000);
+    const existing: Partial<TrackedTokenEntity> = {
+      id: 'pre-matured',
+      userId: USER_ID,
+      symbol: 'XYZUSDT',
+      base: 'XYZ',
+      status: 'ACTIVE',
+      firstDetectedAt: new Date(Date.now() - 3 * 3600 * 1000),
+      lastSeenPumpingAt: lastScanAt,
+      peakScore: 80,
+      peakRsi: 82,
+      peakChange24h: 90,
+      peakPrice: 0.55, // currentPrice del helper scored() es 0.5 → ratio = 0.5/0.55 ≈ 0.91, pasa el 0.80
+      peakAt: new Date(),
+      scansActive: 50,
+      reappearances: 0,
+      activeMs: 60_000, // 1 minuto, lejos del window de 5 min
+      rsiEverPassed: true,
+      rsiPassedAt: new Date(Date.now() - 2 * 60 * 1000),
+      fundingEverPassed: true,
+      fundingPassedAt: new Date(Date.now() - 90 * 1000),
+      divergenceEverPassed: true,
+      divergencePassedAt: new Date(Date.now() - 60 * 1000),
+      redCandlesEverPassed: false, // la que falta — el scan la prenderá
+      redCandlesPassedAt: null,
+      maturedVerdict: null,
+      maturedAt: null,
+      maturedAlertedAt: null,
+    };
+    const repo = baseRepo();
+    repo.findOne.mockResolvedValueOnce(existing);
+    const svc = makeService(repo, { maturedWindowMs: windowMs });
+    const dispatcher = (svc as unknown as { __dispatcher: { dispatchMatured: jest.Mock } }).__dispatcher;
+
+    await svc.reconcile(USER_ID, [scored(60)], 'STRICT', -0.5);
+
+    // 1. Verificar que dispatchMatured se llamó exactamente una vez
+    expect(dispatcher.dispatchMatured).toHaveBeenCalledTimes(1);
+    const [dispatchedUserId, maturedAlert] = dispatcher.dispatchMatured.mock.calls[0];
+    expect(dispatchedUserId).toBe(USER_ID);
+    expect(maturedAlert.base).toBe('XYZ');
+    expect(maturedAlert.everPassedAt.rsi).toBeGreaterThan(0);
+    expect(maturedAlert.everPassedAt.funding).toBeGreaterThan(0);
+    expect(maturedAlert.everPassedAt.divergence).toBeGreaterThan(0);
+    expect(maturedAlert.everPassedAt.redCandles).toBeGreaterThan(0); // recién prendida
+    expect(maturedAlert.peakPrice).toBe(0.55);
+    expect(maturedAlert.mode).toBe('STRICT');
+
+    // 2. maturedAlertedAt persistido en la entity (dedup)
+    const saved = repo.save.mock.calls[0][0];
+    expect(saved.maturedVerdict).toBe('GO_SHORT');
+    expect(saved.maturedAlertedAt).toBeInstanceOf(Date);
+    expect(saved.maturedAt).toBeInstanceOf(Date);
+  });
+
+  it('token YA maduro (maturedAlertedAt seteado) NO vuelve a dispatchar en próximo scan', async () => {
+    // Mismo escenario pero la transición ya ocurrió en un scan previo:
+    // maturedVerdict='GO_SHORT' + maturedAlertedAt seteado. El scan actual
+    // sigue trayendo grade.redCandles passed=true; reconcile NO debe re-dispatchar.
+    const windowMs = 300_000;
+    const existing: Partial<TrackedTokenEntity> = {
+      id: 'already-matured',
+      userId: USER_ID,
+      symbol: 'XYZUSDT',
+      base: 'XYZ',
+      status: 'ACTIVE',
+      firstDetectedAt: new Date(Date.now() - 3 * 3600 * 1000),
+      lastSeenPumpingAt: new Date(Date.now() - 120_000),
+      peakScore: 80,
+      peakRsi: 82,
+      peakChange24h: 90,
+      peakPrice: 0.55,
+      peakAt: new Date(),
+      scansActive: 51,
+      reappearances: 0,
+      activeMs: 120_000,
+      rsiEverPassed: true,
+      rsiPassedAt: new Date(),
+      fundingEverPassed: true,
+      fundingPassedAt: new Date(),
+      divergenceEverPassed: true,
+      divergencePassedAt: new Date(),
+      redCandlesEverPassed: true,
+      redCandlesPassedAt: new Date(),
+      maturedVerdict: 'GO_SHORT',
+      maturedAt: new Date(Date.now() - 60_000),
+      maturedAlertedAt: new Date(Date.now() - 60_000),
+    };
+    const repo = baseRepo();
+    repo.findOne.mockResolvedValueOnce(existing);
+    const svc = makeService(repo, { maturedWindowMs: windowMs });
+    const dispatcher = (svc as unknown as { __dispatcher: { dispatchMatured: jest.Mock } }).__dispatcher;
+
+    await svc.reconcile(USER_ID, [scored(60)], 'STRICT', -0.5);
+
+    expect(dispatcher.dispatchMatured).not.toHaveBeenCalled();
   });
 
   it('archive por window: token YA maduro con activeMs>window NO se archiva', async () => {

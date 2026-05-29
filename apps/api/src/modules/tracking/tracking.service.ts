@@ -3,6 +3,8 @@ import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, In, IsNull, LessThan, MoreThan, Not, Repository } from 'typeorm';
 import type {
+  MaturedAlert,
+  Mode,
   ScoredToken,
   TrackedStatus,
   TrackedTokenView,
@@ -14,6 +16,7 @@ import {
   shouldExpireByWindow,
   updateEverFlags,
 } from './maturity';
+import { AlertDispatcher } from '../alerts/alert-dispatcher.service';
 
 /** Tras N horas en DORMANT sin reaparecer → ARCHIVED. */
 const DORMANT_TTL_HOURS = 24;
@@ -56,6 +59,7 @@ export class TrackingService {
     private readonly repo: Repository<TrackedTokenEntity>,
     private readonly dataSource: DataSource,
     private readonly cfg: ConfigService,
+    private readonly dispatcher: AlertDispatcher,
   ) {}
 
   /**
@@ -71,12 +75,13 @@ export class TrackingService {
    *
    * SHORTED/CLOSED no se tocan automáticamente — los maneja el flujo de Trades.
    */
-  async reconcile(userId: string, scanResults: ScoredToken[]): Promise<{
+  async reconcile(userId: string, scanResults: ScoredToken[], mode: Mode = 'STRICT', btcChange: number = 0): Promise<{
     upserts: number;
     activated: number;
     dormanted: number;
     archived: number;
     windowExpired: number;
+    maturedDispatched: number;
   }> {
     const now = new Date();
     const maturedWindowMs = this.cfg.get<number>('MATURED_WINDOW_MS', MATURED_WINDOW_MS_DEFAULT);
@@ -86,6 +91,11 @@ export class TrackingService {
     let dormanted = 0;
     let archived = 0;
     let windowExpired = 0;
+    // Acumulamos las maturedAlerts a dispatchar DESPUÉS de cerrar la
+    // transacción de BD. Setear maturedAlertedAt es dentro de la tx para
+    // garantizar idempotencia; el dispatch real va fuera para evitar
+    // rollback de toda la reconcile si Redis cae.
+    const pendingMaturedDispatches: MaturedAlert[] = [];
 
     await this.dataSource.transaction(async (mgr) => {
       const repo = mgr.getRepository(TrackedTokenEntity);
@@ -180,6 +190,7 @@ export class TrackingService {
           incrementActiveMs(existing, now, CONTINUITY_THRESHOLD_MS);
           updateEverFlags(existing, r.grades, now);
           existing.peakPrice = peakPriceNew;
+          const wasNotMatured = existing.maturedVerdict === null;
           applyMaturedVerdict(
             existing,
             r.snapshot.price,
@@ -187,6 +198,20 @@ export class TrackingService {
             maturedWindowMs,
             PRICE_NEAR_PEAK_RATIO,
           );
+
+          // ── Detectar transición null → 'GO_SHORT' (Fase 6) ─────────
+          // Solo dispatchamos en la transición exacta. maturedAlertedAt
+          // se setea acá DENTRO de la tx — dedup persistente garantizado
+          // aunque el dispatch a Redis falle luego (queda perdido pero
+          // no se duplica).
+          if (
+            wasNotMatured &&
+            existing.maturedVerdict === 'GO_SHORT' &&
+            existing.maturedAlertedAt === null
+          ) {
+            existing.maturedAlertedAt = now;
+            pendingMaturedDispatches.push(buildMaturedAlert(existing, r, mode, now, btcChange));
+          }
 
           // Update directo a la entity (save preserva tipos jsonb sin pelearse
           // con _QueryDeepPartialEntity de TypeORM)
@@ -256,12 +281,28 @@ export class TrackingService {
       }
     });
 
-    if (upserts || activated || dormanted || archived || windowExpired) {
+    // ── Dispatch MADURO FUERA de la transacción (Fase 6) ───────────
+    // maturedAlertedAt ya fue persistido dentro de la tx (idempotente).
+    // Si dispatchMatured tira (Redis caído), la alerta se pierde pero NO
+    // se duplica en el próximo scan — el row ya tiene maturedAlertedAt != null.
+    for (const matured of pendingMaturedDispatches) {
+      try {
+        await this.dispatcher.dispatchMatured(userId, matured);
+      } catch (err) {
+        this.logger.error(
+          `dispatchMatured failed for ${matured.base} (user=${userId}); alert lost, dedup persistirá`,
+          err,
+        );
+      }
+    }
+    const maturedDispatched = pendingMaturedDispatches.length;
+
+    if (upserts || activated || dormanted || archived || windowExpired || maturedDispatched) {
       this.logger.log(
-        `tracking reconcile · upserts=${upserts} reactivated=${activated} dormanted=${dormanted} archived=${archived} windowExpired=${windowExpired}`,
+        `tracking reconcile · upserts=${upserts} reactivated=${activated} dormanted=${dormanted} archived=${archived} windowExpired=${windowExpired} maturedDispatched=${maturedDispatched}`,
       );
     }
-    return { upserts, activated, dormanted, archived, windowExpired };
+    return { upserts, activated, dormanted, archived, windowExpired, maturedDispatched };
   }
 
   async listByStatus(userId: string, statuses: TrackedStatus[]): Promise<TrackedTokenView[]> {
@@ -341,4 +382,40 @@ function daysSinceUtc(start: Date, now: Date): number {
   );
   const nowUtc = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
   return Math.floor((nowUtc - startUtc) / (24 * 3600 * 1000)) + 1; // día 1 desde el inicio
+}
+
+/**
+ * Construye un `MaturedAlert` desde la entity recién mutada + el ScoredToken
+ * del scan actual. Asume que los 4 PassedAt están seteados (precondición
+ * verificada por el caller: detectó la transición a 'GO_SHORT', que exige
+ * las 4 Ever-flags en true).
+ */
+function buildMaturedAlert(
+  row: TrackedTokenEntity,
+  scored: ScoredToken,
+  mode: Mode,
+  now: Date,
+  btcChange: number,
+): MaturedAlert {
+  return {
+    symbol: row.symbol,
+    base: row.base,
+    ts: now.getTime(),
+    mode,
+    price: scored.snapshot.price,
+    peakPrice: row.peakPrice,
+    vol: scored.snapshot.vol,
+    rsi: scored.snapshot.rsi,
+    fundingRate: scored.snapshot.fundingRate,
+    redCount: scored.snapshot.redCount,
+    btcChange,
+    everPassedAt: {
+      rsi: row.rsiPassedAt?.getTime() ?? 0,
+      funding: row.fundingPassedAt?.getTime() ?? 0,
+      divergence: row.divergencePassedAt?.getTime() ?? 0,
+      redCandles: row.redCandlesPassedAt?.getTime() ?? 0,
+    },
+    firstDetectedAt: row.firstDetectedAt.getTime(),
+    activeMs: row.activeMs,
+  };
 }

@@ -66,4 +66,12 @@ export class AlertEntity {
 
   @Column({ type: 'timestamp with time zone' })
   ts!: Date;
+
+  /**
+   * Distingue alertas instantáneas (verdict del scoring) de alertas
+   * maduras (acumulación multi-scan de Ever-flags). Default 'INSTANT'
+   * para retro-compat con filas creadas antes de Fase 6.
+   */
+  @Column({ type: 'text', default: 'INSTANT' })
+  kind!: 'INSTANT' | 'MATURED';
 }

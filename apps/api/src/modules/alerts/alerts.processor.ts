@@ -24,15 +24,11 @@ export class AlertsProcessor extends WorkerHost {
       this.logger.warn(`unknown job name: ${job.name}`);
       return { sent: false, reason: 'unknown job' };
     }
-    const { userId, alert, currentAlertId } = job.data;
+    const { userId, currentAlertId } = job.data;
     const cfg = await this.users.getDecryptedTelegram(userId);
     if (!cfg) {
       // Sin Telegram configurado → skip silenciosamente (no es error)
       return { sent: false, reason: 'no telegram config' };
-    }
-    // Filtrar: si las near-alerts están off, solo mandar GO_SHORT
-    if (!cfg.nearAlertsEnabled && alert.verdict !== 'GO_SHORT') {
-      return { sent: false, reason: 'near-alerts disabled' };
     }
 
     // Fase 3: traer "Otros del día" para enriquecer el mensaje. Si la query
@@ -47,6 +43,22 @@ export class AlertsProcessor extends WorkerHost {
       );
     }
 
+    // Discriminador del union: chequeo `kind === 'MATURED'` permite a TS
+    // estrechar job.data al payload correcto en cada rama.
+    if (job.data.kind === 'MATURED') {
+      // Alertas MADURAS no respetan el toggle near-alerts: siempre se envían.
+      // Por design, una alerta MADURA es siempre GO_SHORT equivalente.
+      const text = this.telegram.formatMaturedAlert(job.data.alert, othersToday);
+      await this.telegram.send(cfg.token, cfg.chatId, text);
+      return { sent: true };
+    }
+
+    // kind === 'INSTANT' (o ausente — retro-compat con jobs viejos).
+    const alert = job.data.alert;
+    // Filtrar: si las near-alerts están off, solo mandar GO_SHORT
+    if (!cfg.nearAlertsEnabled && alert.verdict !== 'GO_SHORT') {
+      return { sent: false, reason: 'near-alerts disabled' };
+    }
     const text = this.telegram.formatAlert(alert, othersToday);
     await this.telegram.send(cfg.token, cfg.chatId, text);
     return { sent: true };

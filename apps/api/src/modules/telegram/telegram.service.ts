@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import axios, { AxiosError, AxiosInstance } from 'axios';
-import type { OtherTodayAlert, ScanAlert } from '@short-scanner/shared-types';
+import type { MaturedAlert, OtherTodayAlert, ScanAlert } from '@short-scanner/shared-types';
 
 @Injectable()
 export class TelegramService {
@@ -82,6 +82,66 @@ export class TelegramService {
 
     return lines.join('\n');
   }
+
+  /**
+   * Template para alertas MADURAS (Fase 6).
+   * Variante A aprobada por el user 2026-05-29 + peak price en línea de precio.
+   *
+   * Diferencias con `formatAlert`:
+   *  - Header `🎯 MADURO` en lugar de 🔴 GO SHORT / 🔵 CERCA.
+   *  - Línea de precio incluye ratio% y peak en paréntesis.
+   *  - Bloque "Condiciones cumplidas" con timeline (cuándo se prendió cada flag).
+   *  - "En monitoreo: Xh activas" — usa activeMs, no calendario.
+   *  - Sin checkbox por indicador (todas pasan por definición de maduro).
+   *  - Sin Score (no aplica conceptualmente a maduro).
+   *
+   * Reusa el bloque de cierre 4H, Volumen, BTC, y "Otros del día" para
+   * mantener consistencia visual con la alerta instant.
+   */
+  formatMaturedAlert(alert: MaturedAlert, othersToday: OtherTodayAlert[] = []): string {
+    const modeLabel = alert.mode === 'FLEX' ? 'Flexible' : 'Strict';
+    const ratio =
+      alert.peakPrice > 0 ? Math.round((alert.price / alert.peakPrice) * 100) : 0;
+
+    // Minutos hasta el próximo cierre de vela 4H (alineadas a 00,04,08,12,16,20 UTC)
+    const FOUR_H_MS = 4 * 3600 * 1000;
+    const nowMs = Date.now();
+    const nextCloseMs = (Math.floor(nowMs / FOUR_H_MS) + 1) * FOUR_H_MS;
+    const minutesLeft = Math.ceil((nextCloseMs - nowMs) / 60_000);
+
+    const lines: string[] = [
+      `🎯 <b>MADURO</b> — <b>${esc(alert.base)}</b>`,
+      `⚙️ Modo: ${modeLabel}`,
+      ``,
+      `💰 Precio: $${fmtPrice(alert.price)} (${ratio}% del pico $${fmtPrice(alert.peakPrice)})`,
+      `⏱️ En monitoreo: ${fmtActiveTime(alert.activeMs)}`,
+      ``,
+      `<b>Condiciones cumplidas:</b>`,
+      `  ✅ RSI 4h (${fmtAgo(alert.everPassedAt.rsi, nowMs)})`,
+      `  ✅ Funding (${fmtAgo(alert.everPassedAt.funding, nowMs)})`,
+      `  ✅ Divergencia (${fmtAgo(alert.everPassedAt.divergence, nowMs)})`,
+      `  ✅ Velas rojas (${fmtAgo(alert.everPassedAt.redCandles, nowMs)})`,
+      ``,
+      `📊 Volumen: ${fmtVol(alert.vol)}`,
+      `📊 BTC: ${fmtSignedPct(alert.btcChange, 2)}`,
+      ``,
+      `⏰ Cierre vela 4H en: ${fmtMinutes(minutesLeft)}`,
+    ];
+
+    // Reusa la sección "Otros del día" del template instant (Fase 3).
+    if (othersToday.length > 0) {
+      lines.push('');
+      lines.push('📋 Otros del día:');
+      for (const o of othersToday) {
+        const tag = o.verdict === 'GO_SHORT' ? '[GO SHORT]' : '[CERCA]';
+        lines.push(
+          `  • ${esc(o.base)} ${tag} ${fmtSignedPct(o.change, 1)} (${fmtAgo(o.ts)}, score ${o.score})`,
+        );
+      }
+    }
+
+    return lines.join('\n');
+  }
 }
 
 // ── Helpers de formato ───────────────────────────────────────────
@@ -136,4 +196,16 @@ function fmtAgo(tsMs: number, nowMs: number = Date.now()): string {
   if (diffMin < 60) return `hace ${diffMin}min`;
   const diffH = Math.floor(diffMin / 60);
   return `hace ${diffH}h`;
+}
+
+/**
+ * "Xmin activas" si activeMs < 1h, "Xh activas" en otro caso.
+ * Para alertas MADURAS de QA con window comprimido, el cambio de unidad
+ * evita mostrar "0h activas" cuando el monitoreo real fue de minutos.
+ */
+function fmtActiveTime(activeMs: number): string {
+  if (activeMs < 3600_000) {
+    return `${Math.round(activeMs / 60_000)}min activas`;
+  }
+  return `${Math.round(activeMs / 3600_000)}h activas`;
 }
