@@ -1,8 +1,8 @@
 # 07 — Modal de detalle del token (Backlog A)
 
-> **Fase multi-sub-fase.** Este documento cubre **07.1 — modal base + panel de condiciones**. Las sub-fases siguientes conectan datos reales en los placeholders que 07.1 deja montados:
-> - **07.1** *(esta entrega)* — modal, header, panel de las 7 condiciones, placeholders de tracking y chart.
-> - **07.2** *(siguiente)* — sección **Tracking** con datos reales de `tracked_tokens` (Ever-flags, activeMs, peak price, maduración).
+> **Fase multi-sub-fase.** Este documento cubre el modal de detalle del token, entregado en sub-fases que van rellenando los placeholders:
+> - **07.1** *(hecho)* — modal, header, panel de las 7 condiciones, placeholders de tracking y chart.
+> - **07.2** *(hecho)* — sección **Tracking** con datos reales de `tracked_tokens` (Ever-flags, activeMs, peak price, maduración).
 > - **07.3** *(pendiente)* — **Gráfico de precio** (últimos 7 días).
 
 ## Problema que resuelve
@@ -120,11 +120,87 @@ pnpm dev      # api :3000 + web :5173
 
 7. **`onRowClick` opcional en `ScannerTable`.** No se asume que toda instancia de la tabla quiera abrir el modal. Sin la prop, la tabla queda exactamente como antes (sin cursor, sin handler) — cambio no invasivo.
 
+---
+
+# 07.2 — Sección Tracking con datos reales
+
+## Qué resuelve
+
+07.1 dejó la sección Tracking como un placeholder "Aún no monitoreado" sin datos. 07.2 la conecta a la fila real de `tracked_tokens` del símbolo: estado del token, progreso de las **4 Ever-flags** del verdict maduro, tiempo en monitoreo, precio pico vs actual, y estado de maduración. Es la información que el operador necesita para saber *en qué punto de su ciclo de vida* está un token antes de entrar — complementa el "ahora mismo" del panel de condiciones (07.1) con el "cómo viene evolucionando".
+
+Toda la data ya existía en `TrackedTokenView` (poblada por las Fases 4-5-6 del verdict maduro). 07.2 es **100% frontend**: cero backend, cero migración, cero cambio de tipos.
+
+## Decisión: lookup por símbolo vía filtro client-side (Opción A)
+
+El modal tiene `snapshot.symbol` (ej. `HEIUSDT`), pero el endpoint de detalle `GET /api/tracking/:id` busca por UUID. Dos caminos evaluados:
+
+- **A (elegida)** — reusar `api.listTracking(...)` y filtrar por `symbol` en el cliente. Sin backend.
+- **B (descartada por ahora)** — endpoint nuevo `GET /api/tracking/by-symbol/:symbol`.
+
+Se eligió **A**: a la escala actual (solo tokens que cruzan el gate de entrada +50% 24h — decenas como mucho) el filtro es instantáneo, reusa el hook ya existente, y mantiene 07.2 como PR limpio de solo-frontend. Si algún día la lista escala lo suficiente para que traerla entera importe, se agrega B sin romper el contrato del componente (el hook seguiría devolviendo `TrackedTokenView | null`).
+
+## Qué cambia
+
+Cuatro piezas en `apps/web`:
+
+1. **`lib/format.ts`** — dos helpers nuevos de tiempo:
+   - `fmtAgo(iso)` — tiempo relativo en castellano: "recién" / "hace 40s" / "hace 12min" / "hace 4h" / "hace 3d". Devuelve `—` si el timestamp es null/0 (Ever-flag que nunca pasó, sin `*PassedAt`).
+   - `fmtActiveTime(ms)` — duración de monitoreo legible que cambia de unidad por magnitud: "8min" / "3h 12min" / "2d 4h". Necesario porque en QA el `activeMs` está en minutos y en producción en horas/días.
+
+2. **`hooks/useTrackedBySymbol.ts` *(NUEVO)*** — resuelve la fila de tracking de un símbolo:
+   - `symbol === null` (modal cerrado) → no hace fetch, devuelve `tracked: null`.
+   - `symbol` seteado → `api.listTracking(['ACTIVE','DORMANT','SHORTED','CLOSED'])` y `.find(t => t.symbol === symbol)`. Incluye SHORTED/CLOSED para que el panel siga mostrando tracking de un token que el user ya shorteó.
+   - Re-fetch en cada `scan:update` mientras el modal esté abierto, para que las Ever-flags / maduración se actualicen en vivo (mismo patrón que el `useTracking` existente).
+
+3. **`components/TrackingPanel.tsx` *(NUEVO)*** — render del panel, con tres estados:
+   - **loading** (solo primer fetch) → "Cargando tracking…".
+   - **`tracked === null`** → estado informativo "Aún no monitoreado — entra a tracking al superar +50% en 24h" (el token está en el scanner pero no cruzó el gate).
+   - **`tracked`** → panel completo: badge de status (mismos colores que la Watchlist), badge de maduración (`🎯 MADURO` + `maturedAt`, o "aún no maduro"), **checklist de las 4 Ever-flags** (✅/⬜ + "hace X" por flag, contador X/4), grid con En-monitoreo (`activeMs`) / Detectado (`firstDetectedAt`) / Pico (`peakPrice`) / % del pico (`currentPrice/peakPrice`, rojo si ≥80% — el umbral que dispara maduración), y stats de persistencia (`daysActive` / `scansActive` / `reappearances`).
+
+4. **`components/TokenDetailModal.tsx` + `pages/Scanner.tsx`** — `Scanner` invoca `useTrackedBySymbol(selected?.snapshot.symbol ?? null)` y pasa `tracking` + `trackingLoading` al modal, que reemplaza el placeholder de 07.1 por `<TrackingPanel>`.
+
+## Archivos tocados (07.2)
+
+| Archivo | Cambio |
+|---|---|
+| `apps/web/src/lib/format.ts` | + `fmtAgo(iso)` y `fmtActiveTime(ms)`. |
+| `apps/web/src/hooks/useTrackedBySymbol.ts` *(NUEVO)* | Lookup por símbolo vía filtro client-side; gateado por símbolo; refresca en `scan:update`. |
+| `apps/web/src/components/TrackingPanel.tsx` *(NUEVO)* | Render del tracking real: status, maduración, checklist 4 Ever-flags, monitoreo/pico, stats. Estados loading / no-trackeado. |
+| `apps/web/src/components/TokenDetailModal.tsx` | Props `tracking` + `trackingLoading`; placeholder reemplazado por `<TrackingPanel>`. |
+| `apps/web/src/pages/Scanner.tsx` | Invoca `useTrackedBySymbol` y cablea el resultado al modal. |
+
+## Cómo probarlo (07.2)
+
+```bash
+pnpm dev      # api :3000 + web :5173
+```
+
+`pnpm --filter @short-scanner/web typecheck` y `lint` deben quedar en 0 (sin tests automatizados — UI pura, validación visual).
+
+1. **Token trackeado** (cualquiera con tracking activo, ej. uno >50% 24h): la sección Tracking muestra status, X/4 condiciones con "hace X" por flag, monitoreo, pico + % del pico, y stats.
+2. **Token NO trackeado** (ej. uno con cambio bajo que no cruzó el gate): muestra "Aún no monitoreado".
+3. **Refresh en vivo**: dejar el modal abierto y esperar un scan — si una Ever-flag se prende o cambia `activeMs`/`% del pico`, debe reflejarse sin reabrir.
+
+*(Validado el 2026-05-29: HEI +203% → ACTIVE, 1/4 (RSI hace 14h), monitoreo 25min, pico $0.1784 al 96%, 2d/18scans/0reaperturas. XAN +11.98% → "Aún no monitoreado".)*
+
+## Decisiones de diseño (07.2)
+
+1. **Filtro client-side (Opción A) en vez de endpoint dedicado.** Ver sección "Decisión" arriba. La clave: el contrato del hook (`TrackedTokenView | null`) no cambia si más adelante se migra a un endpoint `by-symbol`, así que la elección no se cementa.
+
+2. **Incluir SHORTED/CLOSED en el lookup.** Un token que el user ya shorteó sigue siendo interesante de inspeccionar desde el scanner. Limitar a ACTIVE/DORMANT escondería su tracking justo cuando hay una posición abierta. ARCHIVED se omite (ruido histórico).
+
+3. **El hook no hace fetch si no hay modal abierto.** `symbol === null` corta el fetch de raíz. Evita traer la lista de tracking en cada scan cuando nadie abrió el detalle — a diferencia del `useTracking` de la Watchlist, que sí necesita el polling continuo porque la tabla está siempre visible.
+
+4. **`% del pico` en rojo a partir de 80%.** Es exactamente el umbral que el verdict maduro usa para considerar que el precio "se sostiene cerca del pico" (regla `currentPrice >= peakPrice * 0.80`). Pintarlo en rojo da una señal visual directa de "este token está en zona de maduración".
+
+5. **Reusar los colores de status de la Watchlist** (`STATUS_CLS`). El mismo mapa ACTIVE→verde / DORMANT→ámbar / SHORTED→rojo que `TrackedTokenRow`, para que el operador no aprenda dos lenguajes de color. Se replica el objeto (no se extrae a un módulo compartido todavía) para no acoplar el modal a la tabla por una refactor prematura.
+
+6. **`fmtAgo`/`fmtActiveTime` reimplementados en web, no compartidos con el backend.** El `telegram.service` tiene equivalentes (`fmtAgo`, `fmtActiveTime`) pero viven en el API y formatean para el mensaje de Telegram. Duplicar dos funciones triviales de formateo es más barato que crear una dependencia web→api o moverlas a `shared-types` (que es solo tipos, sin runtime). Si en el futuro hay un tercer consumidor, se evalúa centralizar.
+
 ## Impacto en deploy
 
 **Frontend puro.** No requiere migración, ni variables de entorno, ni dependencias nuevas, ni cambios en `shared-types` ni en el API. Es un cambio de build de `apps/web` y nada más. Sin orden de deploy especial.
 
 ## Pendiente (sub-fases siguientes)
 
-- **07.2 — Tracking real.** Conectar la sección Tracking a `tracked_tokens`: mostrar las 4 Ever-flags con su timestamp, `activeMs` en monitoreo, peak price y ratio actual, y el estado de maduración (`maturedVerdict`). Requiere endpoint que cruce el símbolo del modal con su fila de tracking (probablemente reusar `GET /api/tracking/:id` o filtrar por símbolo).
-- **07.3 — Gráfico de precio (7 días).** El histórico multi-día **no está disponible** en la API hoy: `TrackedToken` solo guarda peaks + current, no snapshots intermedios. Opciones (a decidir en 07.3): (a) tabla nueva `tracked_token_snapshots` (cambio de schema), o (b) reconstruir al vuelo desde Binance por click como hacía el v22 (sin schema, más latencia).
+- **07.3 — Gráfico de precio (7 días).** El histórico multi-día **no está disponible** en la API hoy: `TrackedToken` solo guarda peaks + current, no snapshots intermedios. Opciones (a decidir en 07.3): (a) tabla nueva `tracked_token_snapshots` (cambio de schema), o (b) reconstruir al vuelo desde Binance por click como hacía el v22 (sin schema, más latencia). Render con `lightweight-charts`.

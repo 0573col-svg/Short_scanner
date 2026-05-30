@@ -7,6 +7,7 @@ import { ScanStatusBar } from '../components/ScanStatusBar';
 import { AlertLog } from '../components/AlertLog';
 import { ErrorBanner } from '../components/ErrorBanner';
 import { TokenDetailModal } from '../components/TokenDetailModal';
+import { useTrackedBySymbol } from '../hooks/useTrackedBySymbol';
 import { ApiError, api } from '../lib/api';
 
 function formatError(e: unknown): string {
@@ -56,6 +57,12 @@ export function Scanner() {
     selected && state ? state.ranAt - selected.snapshot.ts : null;
   const btcChange = state?.btc.change ?? null;
 
+  // Resuelve la fila de tracking del token abierto por filtro client-side.
+  // null cuando no hay modal abierto → el hook no hace fetch.
+  const { tracked, loading: trackingLoading } = useTrackedBySymbol(
+    selected?.snapshot.symbol ?? null,
+  );
+
   return (
     <div className="space-y-4">
       <ScanStatusBar state={state} tick={tick} connected={connected} />
@@ -75,6 +82,8 @@ export function Scanner() {
         token={selected}
         btcChange={btcChange}
         snapshotAgeMs={snapshotAgeMs}
+        tracking={tracked}
+        trackingLoading={trackingLoading}
         onClose={() => setSelected(null)}
       />
     </div>
