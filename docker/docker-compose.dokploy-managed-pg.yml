@@ -1,0 +1,84 @@
+# ═══════════════════════════════════════════════════════════════
+# Docker Compose para Dokploy — Postgres ADMINISTRADO por Dokploy
+#
+# Diferencia vs docker-compose.production.yml:
+#   - NO incluye el servicio `postgres`. La BD la creas en
+#     Dokploy → Databases → Create → Postgres.
+#   - `api` se une a `dokploy-network` para alcanzar ese Postgres
+#     por su host interno.
+#   - DATABASE_URL se define en Dokploy → Environment pegando la
+#     "Internal Connection" que muestra el Postgres administrado.
+#
+# Estructura:
+#   ┌─ redis    (BullMQ + cache, incluido aquí)
+#   ├─ api      (NestJS) ─── usa Postgres administrado vía dokploy-network
+#   └─ web      (nginx)  ─── proxy /api y /socket.io → api:3000
+#
+# Postgres administrado vive FUERA de este stack (Dokploy lo gestiona).
+# ═══════════════════════════════════════════════════════════════
+
+services:
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --save 60 1 --loglevel warning
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.api
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      LOG_LEVEL: info
+      CORS_ORIGINS: ${CORS_ORIGINS:?CORS_ORIGINS must be set (ej. https://app.tudominio.com)}
+      # ⬇️ Pega aquí (en Dokploy → Environment) la "Internal Connection" del
+      #    Postgres administrado. Formato:
+      #    postgresql://<user>:<pass>@<host-interno-dokploy>:5432/<db>
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL must be set (Internal Connection del Postgres administrado de Dokploy)}
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set (generar con openssl rand -base64 64)}
+      JWT_ACCESS_TTL: ${JWT_ACCESS_TTL:-15m}
+      JWT_REFRESH_TTL: ${JWT_REFRESH_TTL:-7d}
+      TELEGRAM_ENCRYPTION_KEY: ${TELEGRAM_ENCRYPTION_KEY:?TELEGRAM_ENCRYPTION_KEY must be set (openssl rand -hex 32)}
+      BINANCE_FUTURES_BASE_URL: https://fapi.binance.com
+      TELEGRAM_API_BASE_URL: https://api.telegram.org
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      # default → para hablar con redis y ser alcanzado por web (intra-stack)
+      - default
+      # dokploy-network → para alcanzar el Postgres administrado por su host interno
+      - dokploy-network
+
+  web:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.web
+    restart: unless-stopped
+    depends_on:
+      - api
+    networks:
+      # default → para proxiar a api:3000
+      - default
+      # dokploy-network → para que el Traefik de Dokploy enrute el dominio aquí
+      - dokploy-network
+
+volumes:
+  redis_data:
+    driver: local
+
+networks:
+  # Red compartida que Dokploy crea para Traefik y las BD administradas.
+  # Debe existir ya (la crea Dokploy al instalarse).
+  dokploy-network:
+    external: true
