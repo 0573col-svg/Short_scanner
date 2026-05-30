@@ -1,9 +1,9 @@
 # 07 — Modal de detalle del token (Backlog A)
 
-> **Fase multi-sub-fase.** Este documento cubre el modal de detalle del token, entregado en sub-fases que van rellenando los placeholders:
+> **Fase multi-sub-fase — COMPLETA.** Este documento cubre el modal de detalle del token, entregado en tres sub-fases que fueron rellenando los placeholders. Cierra el **Backlog A**.
 > - **07.1** *(hecho)* — modal, header, panel de las 7 condiciones, placeholders de tracking y chart.
 > - **07.2** *(hecho)* — sección **Tracking** con datos reales de `tracked_tokens` (Ever-flags, activeMs, peak price, maduración).
-> - **07.3** *(pendiente)* — **Gráfico de precio** (últimos 7 días).
+> - **07.3** *(hecho)* — **Gráfico de velas** (últimos 7 días · 4H) vía proxy server-side de Binance + `lightweight-charts`.
 
 ## Problema que resuelve
 
@@ -197,10 +197,103 @@ pnpm dev      # api :3000 + web :5173
 
 6. **`fmtAgo`/`fmtActiveTime` reimplementados en web, no compartidos con el backend.** El `telegram.service` tiene equivalentes (`fmtAgo`, `fmtActiveTime`) pero viven en el API y formatean para el mensaje de Telegram. Duplicar dos funciones triviales de formateo es más barato que crear una dependencia web→api o moverlas a `shared-types` (que es solo tipos, sin runtime). Si en el futuro hay un tercer consumidor, se evalúa centralizar.
 
+---
+
+# 07.3 — Gráfico de velas (7 días · 4H)
+
+## Qué resuelve
+
+07.1 dejó la sección "Precio (últimos 7 días)" como placeholder. 07.3 la conecta a un **gráfico de velas (candlestick)** real con OHLC de los últimos 7 días en velas de 4H. Cierra el detalle del token que existía en el v22 — donde Kervin miraba el histórico antes de entrar — y completa el **Backlog A**.
+
+Se eligió candlestick sobre línea: para trading es más útil (cuerpo, mechas, OHLC por vela) y más profesional que una línea de cierres.
+
+## Decisión: klines vía proxy server-side (Opción A)
+
+El gráfico necesita klines históricos. Dos fuentes posibles:
+
+- **A (elegida)** — endpoint `GET /api/scans/klines` que reusa `BinanceService.fetchKlines` (server-side).
+- **B (descartada)** — `fetch` directo del browser a `fapi.binance.com`, como hacía el v22.
+
+Se eligió **A**. El rewrite a NestJS centralizó **a propósito** todo el acceso a Binance en `BinanceService` (retry con backoff, manejo de geo-block 451, timeout). Volver al browser-directo reintroduce exactamente el riesgo que el server ya resuelve — y es material: Kervin opera desde **Colombia**, donde el geo-block 451 de Binance aparece. Los ~10 líneas de backend compran esa robustez. Costo: 07.3 **no es frontend puro** (toca `scans.controller` + un tipo en `shared-types`), a diferencia de 07.1/07.2.
+
+**Aclaración sobre la "opción a/b" del plan original**: para un *gráfico de precio* la fuente correcta son los **klines de Binance** (OHLC continuo), no la idea descartada de una tabla `tracked_token_snapshots` (que daría puntos dispersos del scan, no velas). El histórico se reconstruye al vuelo desde Binance en cada apertura del modal.
+
+**Intervalo/cantidad**: 4h × 42 velas (≈7 días). Mismo interval que usa el scoring; payload chico.
+
+## Qué cambia
+
+1. **Dependencia** — `lightweight-charts@5` en `apps/web`. La API v5 usa `chart.addSeries(CandlestickSeries, opts)`.
+
+2. **Tipo compartido `KlineView`** (`packages/shared-types/src/market.ts`): `{ time, open, high, low, close }`, con `time` en **segundos UTC** (formato `UTCTimestamp` de lightweight-charts). El API convierte ms→s al mapear.
+
+3. **Endpoint `GET /api/scans/klines?symbol=&interval=&limit=`** en `scans.controller.ts`. Reusa `BinanceService.fetchKlines`, mapea `Kline[]` → `KlineView[]` (ms→s). Si Binance devuelve null (error/geo-block) → `503 ServiceUnavailable`. Authed por el guard global (mismo que el resto de `/scans`). Query validado con `KlinesQueryDto` (symbol `^[A-Z0-9]+USDT$`, interval ∈ {1h,4h,1d}, limit 1–500).
+
+4. **`api.getKlines` + `useKlines(symbol, interval, limit)`** — hook gateado por símbolo (no fetch si el modal está cerrado), **fetch on-open únicamente** (un chart de 7d no necesita refrescar cada scan), con guard `cancelled` para descartar respuestas de un símbolo anterior si el usuario cambia de token mientras el request está en vuelo.
+
+5. **`PriceChart.tsx`** — render del candlestick con theming del modal (colores de `tailwind.config.js`), `autoSize` (ResizeObserver interno de la lib), y cleanup `chart.remove()` en unmount. Es el componente "pesado": se carga **lazy**.
+
+6. **`ChartSection.tsx`** — wrapper que `lazy()`-importa `PriceChart` (la lib ~45kb gzip solo entra al bundle al abrir el modal) y maneja los estados loading / error / sin-datos. Monta el chart con **`key={symbol}`** para que cada token remonte limpio.
+
+7. **`TokenDetailModal` + `Scanner`** — cablean `klines`/`klinesLoading`/`klinesError` y reemplazan el placeholder por `<ChartSection>`.
+
+## Archivos tocados (07.3)
+
+| Archivo | Cambio |
+|---|---|
+| `apps/web/package.json` | + `lightweight-charts@^5.2.0`. |
+| `packages/shared-types/src/market.ts` *(NUEVO)* | Tipo `KlineView` (time en segundos UTC). |
+| `packages/shared-types/src/index.ts` | Export de `./market`. |
+| `apps/api/src/modules/scanner/dto/klines-query.dto.ts` *(NUEVO)* | Validación de symbol/interval/limit. |
+| `apps/api/src/modules/scanner/scans.controller.ts` | Endpoint `GET /scans/klines`; inyecta `BinanceService`; mapea ms→s; 503 si Binance falla. |
+| `apps/web/src/lib/api.ts` | + `api.getKlines(symbol, interval, limit)`. |
+| `apps/web/src/hooks/useKlines.ts` *(NUEVO)* | Fetch on-open gateado por símbolo, guard `cancelled`. |
+| `apps/web/src/components/PriceChart.tsx` *(NUEVO)* | Candlestick v5, theme, autoSize, cleanup. |
+| `apps/web/src/components/ChartSection.tsx` *(NUEVO)* | Lazy-load + estados loading/error/vacío, `key={symbol}`. |
+| `apps/web/src/components/TokenDetailModal.tsx` | Props `klines`/`klinesLoading`/`klinesError`; placeholder → `<ChartSection>`. |
+| `apps/web/src/pages/Scanner.tsx` | Invoca `useKlines` y cablea al modal. |
+
+## Cómo probarlo (07.3)
+
+```bash
+pnpm dev      # api :3000 + web :5173
+```
+
+`pnpm --filter @short-scanner/shared-types build` primero (lo consumen API y web). Después `typecheck` + `lint` de web y `build` de api deben quedar en 0. Smoke del endpoint sin auth → `401` (cableado + guard), no `404`.
+
+1. **Gráfico**: click en un token → ~42 velas candlestick (verde sube / rojo baja, cuerpos + mechas), ejes de tiempo y precio.
+2. **Sin leaks**: abrir/cerrar varios tokens seguidos → cada uno muestra su propio chart; el `key={symbol}` + `chart.remove()` garantizan remonte limpio.
+3. **Estados**: símbolo sin klines → "Sin datos"; Binance caído → mensaje de error en vez del gráfico.
+
+*(Validado visualmente el 2026-05-29.)*
+
+## Decisiones de diseño (07.3)
+
+1. **Proxy server-side (Opción A) por el geo-block colombiano.** Ver sección "Decisión" arriba. No es solo consistencia arquitectónica: es el riesgo real de 451 desde la IP del operador, que el server ya mitiga.
+
+2. **Endpoint colgado de `/scans`, no un módulo `market` nuevo.** El klines proxy es conceptualmente parte del scanner (mismo `BinanceService`, mismo dominio). Un módulo nuevo sería sobre-ingeniería para un endpoint. Queda authed por el guard global sin config extra.
+
+3. **`KlineView.time` en segundos, convertido en el API.** lightweight-charts espera `UTCTimestamp` en segundos; Binance devuelve ms. Convertir en el server deja al cliente sin transformaciones y al tipo compartido con un contrato claro ("segundos UTC").
+
+4. **Fetch on-open, sin refresh por scan.** Un chart de 7 días en velas de 4H no cambia de forma relevante cada 2 min (la vela en curso se mueve, pero no justifica refetch). Mantener el hook simple (sin listener de `scan:update`) evita repintados y requests innecesarios. Si se quisiera la vela viva, sería una mejora futura acotada.
+
+5. **Lazy-load de `lightweight-charts`.** La lib pesa ~45kb gzip. Cargarla con `React.lazy` detrás del modal evita inflar el bundle inicial del scanner — solo paga ese costo quien abre un detalle.
+
+6. **`key={symbol}` en vez de actualizar el chart in-place entre tokens.** Remontar el componente por símbolo es más simple y robusto que diff-ear series entre tokens, y garantiza que el `chart.remove()` del cleanup corra en cada cambio — la defensa directa contra leaks de instancias de chart (lo que Kervin pidió verificar).
+
+## Cierre del Backlog A
+
+Las tres sub-fases (07.1 modal + grades, 07.2 tracking real, 07.3 gráfico de velas) **completan el Backlog A**: el detalle de activo al click que existía en el v22 y no se había migrado a la web NestJS. La web deja de ser regresiva respecto al monolito original en este punto.
+
 ## Impacto en deploy
 
-**Frontend puro.** No requiere migración, ni variables de entorno, ni dependencias nuevas, ni cambios en `shared-types` ni en el API. Es un cambio de build de `apps/web` y nada más. Sin orden de deploy especial.
+- **07.1 y 07.2**: frontend puro. Sin migración, sin deps, sin cambios de API.
+- **07.3**: **toca el API** (endpoint `GET /scans/klines` + tipo `KlineView` en `shared-types` + dep `lightweight-charts` en web). **No requiere migración** (no toca schema) ni variables de entorno.
 
-## Pendiente (sub-fases siguientes)
+### Orden de deploy (07.3)
 
-- **07.3 — Gráfico de precio (7 días).** El histórico multi-día **no está disponible** en la API hoy: `TrackedToken` solo guarda peaks + current, no snapshots intermedios. Opciones (a decidir en 07.3): (a) tabla nueva `tracked_token_snapshots` (cambio de schema), o (b) reconstruir al vuelo desde Binance por click como hacía el v22 (sin schema, más latencia). Render con `lightweight-charts`.
+1. `git pull`.
+2. `pnpm install` (trae `lightweight-charts`).
+3. `pnpm --filter @short-scanner/shared-types build` (el API y la web consumen `KlineView`).
+4. Rebuild/restart del API (para exponer `/scans/klines`) y de la web.
+
+Sin orden estricto entre API y web más allá de que `shared-types` se compile antes que ambos. El endpoint es aditivo — no rompe clientes viejos.

@@ -8,6 +8,7 @@ import { AlertLog } from '../components/AlertLog';
 import { ErrorBanner } from '../components/ErrorBanner';
 import { TokenDetailModal } from '../components/TokenDetailModal';
 import { useTrackedBySymbol } from '../hooks/useTrackedBySymbol';
+import { useKlines } from '../hooks/useKlines';
 import { ApiError, api } from '../lib/api';
 
 function formatError(e: unknown): string {
@@ -63,6 +64,13 @@ export function Scanner() {
     selected?.snapshot.symbol ?? null,
   );
 
+  // Klines OHLC para el gráfico (7 días · 4H × 42 velas) vía proxy server-side.
+  const {
+    candles: klines,
+    loading: klinesLoading,
+    error: klinesError,
+  } = useKlines(selected?.snapshot.symbol ?? null, '4h', 42);
+
   return (
     <div className="space-y-4">
       <ScanStatusBar state={state} tick={tick} connected={connected} />
@@ -84,6 +92,9 @@ export function Scanner() {
         snapshotAgeMs={snapshotAgeMs}
         tracking={tracked}
         trackingLoading={trackingLoading}
+        klines={klines}
+        klinesLoading={klinesLoading}
+        klinesError={klinesError}
         onClose={() => setSelected(null)}
       />
     </div>

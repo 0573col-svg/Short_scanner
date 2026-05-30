@@ -1,4 +1,5 @@
 import type {
+  KlineView,
   Mode,
   ScanState,
   Thresholds,
@@ -141,6 +142,10 @@ export const api = {
   patchSettings: (body: { mode?: Mode; thresholds?: Partial<Thresholds> }) =>
     http<ScanState>('/scans/settings', { method: 'PATCH', body: JSON.stringify(body) }),
   runNow: () => http<{ ok: true; status: 'launched' }>('/scans/run', { method: 'POST' }),
+  getKlines: (symbol: string, interval = '4h', limit = 42) => {
+    const q = new URLSearchParams({ symbol, interval, limit: String(limit) });
+    return http<KlineView[]>(`/scans/klines?${q.toString()}`);
+  },
 
   // ── Tracking ─────────────────────────────────────────────
   listTracking: (statuses?: TrackedStatus[]) => {

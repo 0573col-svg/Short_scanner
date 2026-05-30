@@ -1,9 +1,10 @@
 import { useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import type { ScoredToken, TrackedTokenView } from '@short-scanner/shared-types';
+import type { KlineView, ScoredToken, TrackedTokenView } from '@short-scanner/shared-types';
 import { fmtChange, fmtPrice } from '../lib/format';
 import { GradesPanel } from './GradesPanel';
 import { TrackingPanel } from './TrackingPanel';
+import { ChartSection } from './ChartSection';
 import { VerdictPill } from './VerdictPill';
 
 interface Props {
@@ -16,6 +17,10 @@ interface Props {
   tracking: TrackedTokenView | null;
   /** True mientras se resuelve el tracking del símbolo (primer fetch). */
   trackingLoading: boolean;
+  /** Klines OHLC para el gráfico de precio (7 días · 4H). */
+  klines: KlineView[];
+  klinesLoading: boolean;
+  klinesError: string | null;
   onClose: () => void;
 }
 
@@ -28,6 +33,9 @@ export function TokenDetailModal({
   snapshotAgeMs,
   tracking,
   trackingLoading,
+  klines,
+  klinesLoading,
+  klinesError,
   onClose,
 }: Props) {
   // Escape para cerrar + scroll lock del body mientras el modal está montado.
@@ -117,17 +125,12 @@ export function TokenDetailModal({
 
           <TrackingPanel tracked={tracking} loading={trackingLoading} />
 
-          {/* Chart placeholder — conectado en 07.3 */}
-          <section className="rounded-lg border border-dashed border-line bg-bg-2/40 min-h-[280px] flex flex-col">
-            <header className="px-4 py-2.5 border-b border-line/50">
-              <h3 className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">
-                Precio (últimos 7 días)
-              </h3>
-            </header>
-            <div className="flex-1 flex items-center justify-center text-zinc-600 text-sm">
-              Gráfico — disponible en 07.3
-            </div>
-          </section>
+          <ChartSection
+            symbol={snapshot.symbol}
+            candles={klines}
+            loading={klinesLoading}
+            error={klinesError}
+          />
         </div>
 
         {/* Footer */}

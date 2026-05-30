@@ -5,6 +5,7 @@ export { SCAN_NAMESPACE } from './socket-events';
 
 // Tipos (sin emisión runtime): wildcards está OK
 export * from './health';
+export * from './market';
 export * from './scoring';
 export * from './tracking';
 export * from './trades';
