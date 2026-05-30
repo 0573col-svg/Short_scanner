@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import axios, { AxiosError, AxiosInstance } from 'axios';
-import type { ScanAlert } from '@short-scanner/shared-types';
+import type { MaturedAlert, OtherTodayAlert, ScanAlert } from '@short-scanner/shared-types';
 
 @Injectable()
 export class TelegramService {
@@ -33,17 +33,179 @@ export class TelegramService {
     }
   }
 
-  /** Formato de mensaje de alerta GO_SHORT / CERCA. */
-  formatAlert(alert: ScanAlert): string {
-    const emoji = alert.verdict === 'GO_SHORT' ? '🔴' : '🟡';
-    const verdictText = alert.verdict === 'GO_SHORT' ? '<b>GO SHORT</b>' : '<i>CERCA</i>';
-    const rsiText = alert.rsi !== null ? `RSI <b>${alert.rsi.toFixed(0)}</b>` : 'RSI —';
-    const changeSign = alert.change >= 0 ? '+' : '';
-    return [
-      `${emoji} ${verdictText} <b>${alert.base}</b>/USDT`,
+  /**
+   * Formato de mensaje de alerta GO_SHORT / CERCA.
+   * - Plantilla base: Fase 1 (header + indicadores + cierre 4H).
+   * - `othersToday`: si tiene items, se agrega la sección "Otros del día" al final (Fase 3).
+   */
+  formatAlert(alert: ScanAlert, othersToday: OtherTodayAlert[] = []): string {
+    const headerEmoji = alert.verdict === 'GO_SHORT' ? '🔴' : '🔵';
+    const verdictLabel = alert.verdict === 'GO_SHORT' ? 'GO SHORT' : 'CERCA';
+    const modeLabel = alert.mode === 'FLEX' ? 'Flexible' : 'Strict';
+
+    // Minutos hasta el próximo cierre de vela 4H (alineadas a 00,04,08,12,16,20 UTC)
+    const FOUR_H_MS = 4 * 3600 * 1000;
+    const nowMs = Date.now();
+    const nextCloseMs = (Math.floor(nowMs / FOUR_H_MS) + 1) * FOUR_H_MS;
+    const minutesLeft = Math.ceil((nextCloseMs - nowMs) / 60_000);
+
+    const lines: string[] = [
+      `${headerEmoji} <b>${verdictLabel}</b> — <b>${esc(alert.base)}</b>`,
+      `⚙️ Modo: ${modeLabel}`,
       ``,
-      `Score <b>${alert.score}</b>  ·  24h <b>${changeSign}${alert.change.toFixed(2)}%</b>  ·  ${rsiText}`,
-      `<i>${new Date(alert.ts).toUTCString()}</i>`,
-    ].join('\n');
+      `💰 Precio: $${fmtPrice(alert.price)}`,
+      `📊 24h: ${fmtSignedPct(alert.change, 2)}`,
+      `📊 Score: ${alert.score}/100`,
+      ``,
+      `${checkbox(alert.passed.funding)} Funding: ${fmtFunding(alert.fundingRate)}`,
+      `${checkbox(alert.passed.rsi)} RSI 4h: ${fmtRsi(alert.rsi)}`,
+      `${checkbox(alert.passed.divergence)} Divergencia: ${alert.passed.divergence ? 'sí' : 'no'}`,
+      `${checkbox(alert.passed.redCandles)} Velas rojas: ${alert.redCount} (cerradas)`,
+      `📊 BTC: ${fmtSignedPct(alert.btcChange, 2)}`,
+      `${checkbox(alert.passed.liquidity)} Volumen: ${fmtVol(alert.vol)}`,
+      ``,
+      `⏰ Cierre vela 4H en: ${fmtMinutes(minutesLeft)}`,
+    ];
+
+    // Fase 3: agregar "Otros del día" si hay items. Si está vacío, NO renderizar
+    // la sección (decisión de diseño — un "Sin otras alertas hoy" se ve raro).
+    if (othersToday.length > 0) {
+      lines.push('');
+      lines.push('📋 Otros del día:');
+      for (const o of othersToday) {
+        const tag = o.verdict === 'GO_SHORT' ? '[GO SHORT]' : '[CERCA]';
+        lines.push(
+          `  • ${esc(o.base)} ${tag} ${fmtSignedPct(o.change, 1)} (${fmtAgo(o.ts)}, score ${o.score})`,
+        );
+      }
+    }
+
+    return lines.join('\n');
   }
+
+  /**
+   * Template para alertas MADURAS (Fase 6).
+   * Variante A aprobada por el user 2026-05-29 + peak price en línea de precio.
+   *
+   * Diferencias con `formatAlert`:
+   *  - Header `🎯 MADURO` en lugar de 🔴 GO SHORT / 🔵 CERCA.
+   *  - Línea de precio incluye ratio% y peak en paréntesis.
+   *  - Bloque "Condiciones cumplidas" con timeline (cuándo se prendió cada flag).
+   *  - "En monitoreo: Xh activas" — usa activeMs, no calendario.
+   *  - Sin checkbox por indicador (todas pasan por definición de maduro).
+   *  - Sin Score (no aplica conceptualmente a maduro).
+   *
+   * Reusa el bloque de cierre 4H, Volumen, BTC, y "Otros del día" para
+   * mantener consistencia visual con la alerta instant.
+   */
+  formatMaturedAlert(alert: MaturedAlert, othersToday: OtherTodayAlert[] = []): string {
+    const modeLabel = alert.mode === 'FLEX' ? 'Flexible' : 'Strict';
+    const ratio =
+      alert.peakPrice > 0 ? Math.round((alert.price / alert.peakPrice) * 100) : 0;
+
+    // Minutos hasta el próximo cierre de vela 4H (alineadas a 00,04,08,12,16,20 UTC)
+    const FOUR_H_MS = 4 * 3600 * 1000;
+    const nowMs = Date.now();
+    const nextCloseMs = (Math.floor(nowMs / FOUR_H_MS) + 1) * FOUR_H_MS;
+    const minutesLeft = Math.ceil((nextCloseMs - nowMs) / 60_000);
+
+    const lines: string[] = [
+      `🎯 <b>MADURO</b> — <b>${esc(alert.base)}</b>`,
+      `⚙️ Modo: ${modeLabel}`,
+      ``,
+      `💰 Precio: $${fmtPrice(alert.price)} (${ratio}% del pico $${fmtPrice(alert.peakPrice)})`,
+      `⏱️ En monitoreo: ${fmtActiveTime(alert.activeMs)}`,
+      ``,
+      `<b>Condiciones cumplidas:</b>`,
+      `  ✅ RSI 4h (${fmtAgo(alert.everPassedAt.rsi, nowMs)})`,
+      `  ✅ Funding (${fmtAgo(alert.everPassedAt.funding, nowMs)})`,
+      `  ✅ Divergencia (${fmtAgo(alert.everPassedAt.divergence, nowMs)})`,
+      `  ✅ Velas rojas (${fmtAgo(alert.everPassedAt.redCandles, nowMs)})`,
+      ``,
+      `📊 Volumen: ${fmtVol(alert.vol)}`,
+      `📊 BTC: ${fmtSignedPct(alert.btcChange, 2)}`,
+      ``,
+      `⏰ Cierre vela 4H en: ${fmtMinutes(minutesLeft)}`,
+    ];
+
+    // Reusa la sección "Otros del día" del template instant (Fase 3).
+    if (othersToday.length > 0) {
+      lines.push('');
+      lines.push('📋 Otros del día:');
+      for (const o of othersToday) {
+        const tag = o.verdict === 'GO_SHORT' ? '[GO SHORT]' : '[CERCA]';
+        lines.push(
+          `  • ${esc(o.base)} ${tag} ${fmtSignedPct(o.change, 1)} (${fmtAgo(o.ts)}, score ${o.score})`,
+        );
+      }
+    }
+
+    return lines.join('\n');
+  }
+}
+
+// ── Helpers de formato ───────────────────────────────────────────
+
+/** Escape HTML para safe usage con parse_mode=HTML. */
+function esc(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function checkbox(passed: boolean): string {
+  return passed ? '✅' : '⬜';
+}
+
+function fmtSignedPct(n: number, digits: number): string {
+  const sign = n >= 0 ? '+' : '';
+  return `${sign}${n.toFixed(digits)}%`;
+}
+
+function fmtFunding(fr: number | null): string {
+  if (fr === null) return '—';
+  return fmtSignedPct(fr * 100, 3);
+}
+
+function fmtRsi(r: number | null): string {
+  return r === null ? '—' : r.toFixed(0);
+}
+
+function fmtPrice(p: number): string {
+  if (p >= 1) return p.toFixed(4);
+  if (p < 0.001) return p.toExponential(2);
+  return p.toFixed(6);
+}
+
+function fmtVol(v: number): string {
+  if (v >= 1e9) return `${(v / 1e9).toFixed(1)}B`;
+  if (v >= 1e6) return `${(v / 1e6).toFixed(1)}M`;
+  if (v >= 1e3) return `${(v / 1e3).toFixed(1)}K`;
+  return v.toFixed(0);
+}
+
+function fmtMinutes(m: number): string {
+  if (m < 60) return `${m}min`;
+  const h = Math.floor(m / 60);
+  const rem = m % 60;
+  return rem === 0 ? `${h}h` : `${h}h ${rem}min`;
+}
+
+/** "recién" / "hace Xmin" / "hace Xh" — usado en la sección "Otros del día". */
+function fmtAgo(tsMs: number, nowMs: number = Date.now()): string {
+  const diffMin = Math.floor((nowMs - tsMs) / 60_000);
+  if (diffMin < 1) return 'recién';
+  if (diffMin < 60) return `hace ${diffMin}min`;
+  const diffH = Math.floor(diffMin / 60);
+  return `hace ${diffH}h`;
+}
+
+/**
+ * "Xmin activas" si activeMs < 1h, "Xh activas" en otro caso.
+ * Para alertas MADURAS de QA con window comprimido, el cambio de unidad
+ * evita mostrar "0h activas" cuando el monitoreo real fue de minutos.
+ */
+function fmtActiveTime(activeMs: number): string {
+  if (activeMs < 3600_000) {
+    return `${Math.round(activeMs / 60_000)}min activas`;
+  }
+  return `${Math.round(activeMs / 3600_000)}h activas`;
 }

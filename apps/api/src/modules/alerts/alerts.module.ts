@@ -1,9 +1,12 @@
 import { Module } from '@nestjs/common';
 import { BullModule } from '@nestjs/bullmq';
 import { ConfigModule, ConfigService } from '@nestjs/config';
+import { TypeOrmModule } from '@nestjs/typeorm';
 import { ALERTS_QUEUE } from './alerts.queue';
 import { AlertsProcessor } from './alerts.processor';
 import { AlertDispatcher } from './alert-dispatcher.service';
+import { AlertsHistoryService } from './alerts.history.service';
+import { AlertEntity } from './alert.entity';
 import { UsersModule } from '../users/users.module';
 import { TelegramModule } from '../telegram/telegram.module';
 
@@ -40,10 +43,11 @@ import { TelegramModule } from '../telegram/telegram.module';
       },
     }),
     BullModule.registerQueue({ name: ALERTS_QUEUE }),
+    TypeOrmModule.forFeature([AlertEntity]),
     UsersModule,
     TelegramModule,
   ],
-  providers: [AlertsProcessor, AlertDispatcher],
-  exports: [AlertDispatcher],
+  providers: [AlertsProcessor, AlertDispatcher, AlertsHistoryService],
+  exports: [AlertDispatcher, AlertsHistoryService],
 })
 export class AlertsModule {}

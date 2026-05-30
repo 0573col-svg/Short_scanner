@@ -8,6 +8,7 @@ import { VerdictPill } from './VerdictPill';
 interface Props {
   results: ScoredToken[];
   flashSet: Set<string>;
+  onRowClick?: (row: ScoredToken) => void;
 }
 
 const ROW_BG: Record<Verdict, string> = {
@@ -26,7 +27,7 @@ const ACCESSORS: Record<SortColumn, (r: ScoredToken) => number> = {
   vol: (r) => r.snapshot.vol,
 };
 
-export function ScannerTable({ results, flashSet }: Props) {
+export function ScannerTable({ results, flashSet, onRowClick }: Props) {
   const [sort, setSort] = useState<SortState>(null);
 
   const displayed = useMemo(() => {
@@ -83,7 +84,8 @@ export function ScannerTable({ results, flashSet }: Props) {
             return (
               <tr
                 key={r.snapshot.symbol}
-                className={`${ROW_BG[r.verdict]} ${flashing ? 'animate-pulse ring-2 ring-accent-red ring-inset' : ''} transition`}
+                onClick={onRowClick ? () => onRowClick(r) : undefined}
+                className={`${ROW_BG[r.verdict]} ${flashing ? 'animate-pulse ring-2 ring-accent-red ring-inset' : ''} transition ${onRowClick ? 'cursor-pointer' : ''}`}
               >
                 <td className="px-3 py-2 text-zinc-500">{i + 1}</td>
                 <td className="px-3 py-2">

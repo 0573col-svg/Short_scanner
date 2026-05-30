@@ -1,7 +1,9 @@
 import { Logger } from '@nestjs/common';
 import { Processor, WorkerHost } from '@nestjs/bullmq';
 import { Job } from 'bullmq';
+import type { OtherTodayAlert } from '@short-scanner/shared-types';
 import { ALERTS_QUEUE, type TelegramJobData } from './alerts.queue';
+import { AlertsHistoryService } from './alerts.history.service';
 import { UsersService } from '../users/users.service';
 import { TelegramService } from '../telegram/telegram.service';
 
@@ -12,6 +14,7 @@ export class AlertsProcessor extends WorkerHost {
   constructor(
     private readonly users: UsersService,
     private readonly telegram: TelegramService,
+    private readonly history: AlertsHistoryService,
   ) {
     super();
   }
@@ -21,17 +24,42 @@ export class AlertsProcessor extends WorkerHost {
       this.logger.warn(`unknown job name: ${job.name}`);
       return { sent: false, reason: 'unknown job' };
     }
-    const { userId, alert } = job.data;
+    const { userId, currentAlertId } = job.data;
     const cfg = await this.users.getDecryptedTelegram(userId);
     if (!cfg) {
       // Sin Telegram configurado → skip silenciosamente (no es error)
       return { sent: false, reason: 'no telegram config' };
     }
+
+    // Fase 3: traer "Otros del día" para enriquecer el mensaje. Si la query
+    // falla, log + array vacío → el mensaje sale sin la sección extra.
+    let othersToday: OtherTodayAlert[] = [];
+    try {
+      othersToday = await this.history.getOthersToday(userId, currentAlertId);
+    } catch (err) {
+      this.logger.error(
+        `getOthersToday failed for user ${userId}; sending alert without "Otros del día"`,
+        err,
+      );
+    }
+
+    // Discriminador del union: chequeo `kind === 'MATURED'` permite a TS
+    // estrechar job.data al payload correcto en cada rama.
+    if (job.data.kind === 'MATURED') {
+      // Alertas MADURAS no respetan el toggle near-alerts: siempre se envían.
+      // Por design, una alerta MADURA es siempre GO_SHORT equivalente.
+      const text = this.telegram.formatMaturedAlert(job.data.alert, othersToday);
+      await this.telegram.send(cfg.token, cfg.chatId, text);
+      return { sent: true };
+    }
+
+    // kind === 'INSTANT' (o ausente — retro-compat con jobs viejos).
+    const alert = job.data.alert;
     // Filtrar: si las near-alerts están off, solo mandar GO_SHORT
     if (!cfg.nearAlertsEnabled && alert.verdict !== 'GO_SHORT') {
       return { sent: false, reason: 'near-alerts disabled' };
     }
-    const text = this.telegram.formatAlert(alert);
+    const text = this.telegram.formatAlert(alert, othersToday);
     await this.telegram.send(cfg.token, cfg.chatId, text);
     return { sent: true };
   }

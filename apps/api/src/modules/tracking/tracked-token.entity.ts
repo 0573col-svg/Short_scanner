@@ -16,6 +16,12 @@ export const TRACKED_STATUSES: TrackedStatus[] = [
   'ARCHIVED',
 ];
 
+/** TypeORM trae bigint como string desde pg — convertir a number en la app. */
+const bigintTransformer = {
+  to: (value: number | null | undefined): number | null | undefined => value,
+  from: (value: string | null): number => (value === null ? 0 : parseInt(value, 10)),
+};
+
 @Entity('tracked_tokens')
 @Unique('uq_user_symbol_first_detected', ['userId', 'symbol', 'firstDetectedAt'])
 @Index(['userId', 'status'])
@@ -65,4 +71,28 @@ export class TrackedTokenEntity {
 
   // ── Trade asociado (cuando el usuario abre short) ───────
   @Column({ type: 'uuid', nullable: true, unique: true }) tradeId!: string | null;
+
+  // ── Matured-verdict tracking (Fase 4 — schema base) ─────
+  // Flags "ever passed": una vez true, no se desactivan dentro del período.
+  @Column({ type: 'boolean', default: false }) rsiEverPassed!: boolean;
+  @Column({ type: 'timestamptz', nullable: true }) rsiPassedAt!: Date | null;
+  @Column({ type: 'boolean', default: false }) fundingEverPassed!: boolean;
+  @Column({ type: 'timestamptz', nullable: true }) fundingPassedAt!: Date | null;
+  @Column({ type: 'boolean', default: false }) divergenceEverPassed!: boolean;
+  @Column({ type: 'timestamptz', nullable: true }) divergencePassedAt!: Date | null;
+  @Column({ type: 'boolean', default: false }) redCandlesEverPassed!: boolean;
+  @Column({ type: 'timestamptz', nullable: true }) redCandlesPassedAt!: Date | null;
+
+  // Veredicto "maduro" — null hasta que se cumplan las 3 reglas.
+  @Column({ type: 'text', nullable: true }) maturedVerdict!: string | null;
+  @Column({ type: 'timestamptz', nullable: true }) maturedAt!: Date | null;
+  // Dedup persistente de la alerta MADURO: timestamp del envío Telegram.
+  @Column({ type: 'timestamptz', nullable: true }) maturedAlertedAt!: Date | null;
+
+  // Precio del último scan (no high-water; valor instantáneo).
+  @Column({ type: 'double precision', nullable: true }) currentPrice!: number | null;
+
+  // Milisegundos activos acumulados — incrementa solo en reaparición continua
+  // (delta <= 1.5× SCAN_INTERVAL_MS). DORMANT pausa el reloj.
+  @Column({ type: 'bigint', default: 0, transformer: bigintTransformer }) activeMs!: number;
 }

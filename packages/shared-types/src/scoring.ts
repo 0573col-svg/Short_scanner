@@ -107,6 +107,19 @@ export interface ScanState {
   results: ScoredToken[];
 }
 
+/**
+ * Resumen mínimo de una alerta histórica del día, usado para renderizar la
+ * sección "Otros del día" en el mensaje de Telegram (Fase 3).
+ */
+export interface OtherTodayAlert {
+  base: string;
+  verdict: Verdict;
+  change: number;
+  score: number;
+  /** Epoch ms del momento del scan que generó la alerta. */
+  ts: number;
+}
+
 export interface ScanAlert {
   symbol: string;
   base: string;
@@ -115,4 +128,68 @@ export interface ScanAlert {
   change: number;
   rsi: number | null;
   ts: number;
+  // ── Campos extendidos para plantilla rica de Telegram (Fase 1) ──
+  /** Modo activo del usuario al momento del scoring. */
+  mode: Mode;
+  /** Precio último en USD. */
+  price: number;
+  /** Volumen 24h en USD (quoteVolume). */
+  vol: number;
+  /** Funding rate como decimal (0.05 = 5%). null si no estaba disponible. */
+  fundingRate: number | null;
+  /** Velas rojas consecutivas cerradas al final (excluye la vela en curso). */
+  redCount: number;
+  /** % cambio 24h de BTC al momento del scan (informativo, sin checkbox). */
+  btcChange: number;
+  /** Flags passed por indicador — driver de los ✅/⬜ en la plantilla. */
+  passed: {
+    funding: boolean;
+    rsi: boolean;
+    divergence: boolean;
+    redCandles: boolean;
+    liquidity: boolean;
+  };
+}
+
+/**
+ * Alerta de tipo MADURO (Fase 6) — disparada cuando un tracked token cumple
+ * las 3 reglas del verdict maduro: 4 Ever-flags + precio cerca del pico +
+ * activeMs dentro del window.
+ *
+ * Estructuralmente distinto de `ScanAlert`: el cuerpo del mensaje muestra
+ * un timeline de CUÁNDO cada condición se cumplió (no si está activa ahora),
+ * más métricas de tracking acumulado (activeMs, ratio precio/peak).
+ */
+export interface MaturedAlert {
+  symbol: string;
+  base: string;
+  /** Timestamp del scan que detectó la maduración (epoch ms). */
+  ts: number;
+  /** Modo del usuario al momento de la maduración. */
+  mode: Mode;
+  /** Precio del último scan. */
+  price: number;
+  /** Pico histórico del precio durante la vida del token. */
+  peakPrice: number;
+  /** Volumen 24h en USD. */
+  vol: number;
+  /** RSI del último scan. */
+  rsi: number | null;
+  /** Funding rate del último scan. */
+  fundingRate: number | null;
+  /** Velas rojas consecutivas cerradas al final. */
+  redCount: number;
+  /** % cambio 24h de BTC al momento del scan. */
+  btcChange: number;
+  /** Cuándo se prendió cada Ever-flag por primera vez (epoch ms). */
+  everPassedAt: {
+    rsi: number;
+    funding: number;
+    divergence: number;
+    redCandles: number;
+  };
+  /** Cuándo fue detectado por primera vez en el tracking (epoch ms). */
+  firstDetectedAt: number;
+  /** Milisegundos activos acumulados (reloj pausado durante DORMANT). */
+  activeMs: number;
 }

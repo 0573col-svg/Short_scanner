@@ -7,11 +7,15 @@ import {
   HttpStatus,
   Patch,
   Post,
+  Query,
+  ServiceUnavailableException,
 } from '@nestjs/common';
-import type { ScanState } from '@short-scanner/shared-types';
+import type { KlineView, ScanState } from '@short-scanner/shared-types';
 import { ScannerStateStore } from './scanner.state';
 import { ScannerService } from './scanner.service';
 import { SettingsPatchDto } from './dto/settings-patch.dto';
+import { KlinesQueryDto } from './dto/klines-query.dto';
+import { BinanceService } from '../binance/binance.service';
 import { UsersService } from '../users/users.service';
 import { CurrentUser } from '../auth/current-user.decorator';
 import type { AuthenticatedUser } from '../auth/auth.types';
@@ -27,7 +31,31 @@ export class ScansController {
     private readonly state: ScannerStateStore,
     private readonly scanner: ScannerService,
     private readonly users: UsersService,
+    private readonly binance: BinanceService,
   ) {}
+
+  /**
+   * Klines OHLC para el gráfico de precio del modal de detalle (Backlog A 07.3).
+   * Proxy server-side de Binance — reusa BinanceService (retry, geo-block 451,
+   * timeout). El browser nunca pega a Binance directo.
+   */
+  @Get('klines')
+  async klines(@Query() q: KlinesQueryDto): Promise<KlineView[]> {
+    const klines = await this.binance.fetchKlines(q.symbol, q.interval, q.limit);
+    if (klines === null) {
+      throw new ServiceUnavailableException(
+        `No se pudieron obtener klines de ${q.symbol} (Binance no respondió)`,
+      );
+    }
+    // ms → segundos UTC (formato que espera lightweight-charts).
+    return klines.map((k) => ({
+      time: Math.floor(k.openTime / 1000),
+      open: k.open,
+      high: k.high,
+      low: k.low,
+      close: k.close,
+    }));
+  }
 
   @Get('current')
   async current(@CurrentUser() user: AuthenticatedUser): Promise<ScanState> {

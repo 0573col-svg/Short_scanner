@@ -39,7 +39,7 @@ describe('HealthController', () => {
   });
 
   it('returns ok cuando el scan corrió recientemente', () => {
-    store.applyUserResults(TEST_USER, [], Date.now() + 120_000);
+    store.applyUserResults(TEST_USER, [], Date.now() + 120_000, 'STRICT', 0);
     const res = fakeRes();
     const r = controller.healthz(res);
     expect(r.status).toBe('ok');
@@ -48,7 +48,7 @@ describe('HealthController', () => {
   });
 
   it('returns degraded + 503 cuando el scan está stale > 5 min', () => {
-    store.applyUserResults(TEST_USER, [], 0);
+    store.applyUserResults(TEST_USER, [], 0, 'STRICT', 0);
     // Hack: forzar ranAt en el pasado (atributo privado)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (store as any).ranAt = Date.now() - 7 * 60_000;
